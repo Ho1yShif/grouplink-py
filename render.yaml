@@ -1,0 +1,78 @@
+# Blueprint for everything except the Workflow: the static site the page is served
+# from, the Key Value instance that caches scraped metadata, and the web service
+# Notion's webhook posts to. Blueprints don't support Workflows yet, so create the
+# Workflow service in the Dashboard and set its env vars there — including
+# REDIS_URL, copied from this Key Value instance's internal connection string.
+#
+# Order: apply this Blueprint, create the Workflow, then set WORKFLOW_SLUG and
+# RENDER_STATIC_SITE_ID.
+projects:
+  - name: grouplink
+    environments:
+      - name: production
+        services:
+          # The page. autoDeploy is off because grouplink.rebuild triggers the deploy
+          # itself, right after it commits the new index.html.
+          - type: web
+            name: grouplink-site
+            runtime: static
+            buildCommand: ""
+            staticPublishPath: ./site
+            autoDeployTrigger: "off"
+            headers:
+              - path: /*
+                name: X-Content-Type-Options
+                value: nosniff
+              - path: /*
+                name: Referrer-Policy
+                value: strict-origin-when-cross-origin
+              - path: /assets/fonts/*
+                name: Cache-Control
+                value: public, max-age=31536000, immutable
+
+          # Notion posts here on every edit; the receiver debounces and starts one
+          # grouplink.rebuild run. On the starter plan so it is always on — a free
+          # instance spins down after 15 minutes idle, and this is the only trigger.
+          - type: web
+            name: grouplink-webhook
+            runtime: python
+            plan: starter
+            region: oregon
+            # Render's Python image does not ship uv, so the build installs from
+            # requirements.txt, which `uv export` regenerates.
+            buildCommand: pip install -r requirements.txt
+            startCommand: python -m grouplink.webhook
+            healthCheckPath: /healthz
+            autoDeployTrigger: commit
+            # Without this the receiver redeploys every time a run commits a page.
+            buildFilter:
+              paths:
+                - grouplink/**
+                - pyproject.toml
+                - uv.lock
+                - requirements.txt
+                - .python-version
+                - render.yaml
+            envVars:
+              - key: RENDER_API_KEY
+                sync: false
+              - key: WORKFLOW_SLUG
+                sync: false
+              # Verification token of the Notion subscription. Unset until the
+              # handshake lands; see the README.
+              - key: NOTION_WEBHOOK_SECRET
+                sync: false
+              - key: DISPATCH_TOKEN
+                generateValue: true
+              - key: REBUILD_TASK
+                value: grouplink.rebuild
+              - key: DEBOUNCE_MS
+                value: "60000"
+
+          - type: keyvalue
+            name: grouplink-cache
+            plan: starter
+            region: oregon
+            maxmemoryPolicy: allkeys-lru
+            # Private network only. The Workflow reaches it over the internal URL.
+            ipAllowList: []
