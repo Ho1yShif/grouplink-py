@@ -2,17 +2,22 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from render_lab_tasks_notion.types import PageDTO
 
 from grouplink.links import (
+    assert_default_slug,
     favicon_url,
     group_by_person,
     meta_cache_key,
     page_path,
+    page_paths_for,
     skipped_rows,
+    to_icon_name,
     to_link_rows,
     to_person_rows,
     unique_urls,
+    unknown_icons,
     visible_rows,
 )
 
@@ -55,6 +60,35 @@ class TestToLinkRows:
     def test_falls_back_to_the_title_property(self) -> None:
         rows = to_link_rows([page({"URL": "https://a.example", "Title": " Named "}, "")])
         assert rows[0].title == "Named"
+
+    def test_reads_the_icon_column(self) -> None:
+        rows = to_link_rows([page({"URL": "https://a.example", "Icon": "Workflows"}, "A")])
+        assert rows[0].icon == "workflows"
+
+    def test_defaults_the_icon_when_the_column_is_missing(self) -> None:
+        assert to_link_rows([page({"URL": "https://a.example"}, "A")])[0].icon == "arrow"
+
+
+class TestToIconName:
+    @pytest.mark.parametrize("value", ["workflows", " Workflows ", "WORKFLOWS"])
+    def test_strips_and_lowercases_a_known_option(self, value: str) -> None:
+        assert to_icon_name(value) == "workflows"
+
+    @pytest.mark.parametrize("value", ["", "   ", "nonesuch", None, 7, ["arrow"]])
+    def test_falls_back_for_an_empty_unknown_or_non_string_cell(self, value: Any) -> None:
+        assert to_icon_name(value) == "arrow"
+
+
+class TestUnknownIcons:
+    def test_names_the_options_no_file_matches_in_first_seen_order(self) -> None:
+        pages = [
+            page({"URL": "https://a.example", "Icon": "Sparkle"}, "A"),
+            page({"URL": "https://b.example", "Icon": "workflows"}, "B"),
+            page({"URL": "https://c.example", "Icon": "Rocket"}, "C"),
+            page({"URL": "https://d.example", "Icon": "sparkle"}, "D"),
+            page({"URL": "https://e.example"}, "E"),
+        ]
+        assert unknown_icons(pages) == ["sparkle", "rocket"]
 
 
 class TestToPersonRows:
@@ -141,6 +175,26 @@ class TestFaviconUrl:
 def test_page_path_puts_the_default_person_at_the_root() -> None:
     assert page_path("site", "") == "site/index.html"
     assert page_path("site", "alex") == "site/alex/index.html"
+
+
+class TestPagePathsFor:
+    def test_writes_the_default_person_twice(self) -> None:
+        assert page_paths_for("site", "shifra", "shifra") == [
+            "site/shifra/index.html",
+            "site/index.html",
+        ]
+
+    def test_writes_everyone_else_once(self) -> None:
+        assert page_paths_for("site", "alex", "shifra") == ["site/alex/index.html"]
+
+
+class TestAssertDefaultSlug:
+    def test_passes_when_a_person_has_the_slug(self) -> None:
+        assert_default_slug(to_person_rows(PEOPLE), "shifra")
+
+    def test_names_the_slug_that_matches_nobody(self) -> None:
+        with pytest.raises(ValueError, match="SITE_DEFAULT_SLUG"):
+            assert_default_slug(to_person_rows(PEOPLE), "nobody")
 
 
 def test_meta_cache_key_is_versioned() -> None:

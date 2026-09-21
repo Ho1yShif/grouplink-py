@@ -1,7 +1,7 @@
 """Render every person's page from the real Notion databases and write them into
 site/, so a local static server serves the same HTML the workflow commits.
 
-Run with `uv run python scripts/preview.py`.
+Run with `uv run python -m scripts.preview`.
 
 This is the read half of grouplink.rebuild: Notion and the scrape, no Key Value, no
 GitHub, no deploy. It overwrites the tracked files under site/ — `git checkout --
@@ -11,7 +11,6 @@ site && git clean -fd site` puts them back.
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 
 from dotenv import load_dotenv
 from render_lab_tasks_notion.query_database import query_database
@@ -19,21 +18,20 @@ from render_lab_tasks_scrape.extract_metadata import extract_metadata
 from render_lab_test_utils import local_ctx
 
 import grouplink.notion_relation  # noqa: F401  (imported for its side effect)
+from grouplink.batch import map_in_batches
 from grouplink.config import load_config
 from grouplink.links import (
+    assert_default_slug,
     card_description,
-    favicon_url,
     group_by_person,
-    page_path,
+    to_card,
     to_link_rows,
     to_person_rows,
     unique_urls,
     visible_rows,
 )
-from grouplink.page import LinkCard, PageModel, render_page
-
-BATCH_SIZE = 10
-REPO_ROOT = Path(__file__).resolve().parent.parent
+from grouplink.page import PageModel
+from scripts.write_pages import REPO_ROOT, write_pages
 
 
 async def main() -> None:
@@ -47,48 +45,29 @@ async def main() -> None:
     )
 
     people = to_person_rows(people_pages)
-    if not any(person.slug == cfg.default_slug for person in people):
-        raise SystemExit(
-            f'SITE_DEFAULT_SLUG is "{cfg.default_slug}", which matches no Slug in People'
-        )
+    assert_default_slug(people, cfg.default_slug)
 
     pages = group_by_person(visible_rows(to_link_rows(link_pages)), people)
     card_urls = unique_urls([row for page in pages for row in page.rows])
 
-    descriptions: dict[str, str] = {}
-    for start in range(0, len(card_urls), BATCH_SIZE):
-        batch = card_urls[start : start + BATCH_SIZE]
-        scraped = await asyncio.gather(
-            *(ctx.run(extract_metadata, {"url": url}) for url in batch)
-        )
-        for url, result in zip(batch, scraped, strict=True):
-            descriptions[url] = card_description(result or {})
+    scraped = await map_in_batches(
+        card_urls, lambda url, _i: ctx.run(extract_metadata, {"url": url})
+    )
+    descriptions = {
+        url: card_description(result or {}) for url, result in zip(card_urls, scraped, strict=True)
+    }
 
     for page in pages:
-        html = render_page(
+        write_pages(
             PageModel(
                 name=page.person.name,
                 tagline=page.person.tagline,
-                cards=[
-                    LinkCard(
-                        title=row.title,
-                        url=row.url,
-                        description=descriptions.get(row.url, ""),
-                        icon_url=favicon_url(row.url),
-                    )
-                    for row in page.rows
-                ],
-            )
+                cards=[to_card(row, descriptions.get(row.url, "")) for row in page.rows],
+            ),
+            site_dir=cfg.site_dir,
+            slug=page.person.slug,
+            default_slug=cfg.default_slug,
         )
-
-        paths = [page_path(cfg.site_dir, page.person.slug)]
-        if page.person.slug == cfg.default_slug:
-            paths.append(page_path(cfg.site_dir, ""))
-        for path in paths:
-            out = REPO_ROOT / path
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(html)
-            print(f"wrote {path}")
 
 
 if __name__ == "__main__":

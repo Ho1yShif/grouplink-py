@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' https:; style-src 'sha256-An/eU4S0wrXmE6ifnbZpesypnGf5iiQm/3aPLU0kgFE='; script-src 'sha256-nsmyq4665IeAl+Jlo+x36bCB9QoTOCItVFJQEtSIlhM='; font-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' https:; style-src 'sha256-grYRuNKsOokPez1sm0TW8ciRIWBSpb7mrrCIaZWaPI8='; script-src 'sha256-nsmyq4665IeAl+Jlo+x36bCB9QoTOCItVFJQEtSIlhM='; font-src 'self'; base-uri 'none'; form-action 'none'">
 <title>Render Links</title>
 <meta name="description" content="The fastest path to production for full-stack applications and agents">
 <meta property="og:title" content="Graham — links">
@@ -79,7 +79,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-default);
+  font-family: var(--font-brand);
   font-weight: 400;
   font-size: 16px;
   line-height: 24px;
@@ -88,7 +88,7 @@ body {
 }
 
 .page {
-  max-width: 560px;
+  max-width: 640px;
   margin: 0 auto;
   padding: 96px 32px 64px;
   display: flex;
@@ -113,7 +113,6 @@ body {
   display: block;
   color: var(--text);
 }
-.logo-link:hover { color: var(--link); }
 .logo-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 
 /*
@@ -125,7 +124,6 @@ body {
   width: 240px;
   height: 46px;
   background-color: currentColor;
-  transition: background-color 150ms var(--ease);
   -webkit-mask: url('/assets/render-logo-white.png') center / contain no-repeat;
   mask: url('/assets/render-logo-white.png') center / contain no-repeat;
 }
@@ -134,7 +132,7 @@ body {
 
 .card {
   display: grid;
-  grid-template-columns: 32px 1fr 16px;
+  grid-template-columns: 32px 1fr;
   align-items: start;
   gap: 16px;
   padding: 18px 12px;
@@ -169,15 +167,27 @@ body {
 .card:focus-visible { background: var(--row-hover); }
 .card:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
-.card__index {
-  font-family: var(--font-mono);
-  font-weight: 500;
-  font-size: 12px;
-  line-height: 24px;
-  letter-spacing: 0.02em;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-faint);
+/*
+ * The icon files are dark artwork on transparency, so an <img> would disappear
+ * against the dark background. Each one is a mask instead, painted with the
+ * faint text color. The top margin sits the 20px square on the title's cap line.
+ */
+.card__mark {
+  width: 20px;
+  height: 20px;
+  margin-top: 3px;
+  background-color: var(--text-faint);
+  -webkit-mask: var(--mark) center / contain no-repeat;
+  mask: var(--mark) center / contain no-repeat;
 }
+.card__mark--arrow { --mark: url('/assets/link-icons/arrow.png'); }
+.card__mark--credits { --mark: url('/assets/link-icons/credits.png'); }
+.card__mark--download { --mark: url('/assets/link-icons/download.png'); }
+.card__mark--form { --mark: url('/assets/link-icons/form.png'); }
+.card__mark--info { --mark: url('/assets/link-icons/info.png'); }
+.card__mark--render { --mark: url('/assets/link-icons/render.png'); }
+.card__mark--upload { --mark: url('/assets/link-icons/upload.png'); }
+.card__mark--workflows { --mark: url('/assets/link-icons/workflows.png'); }
 
 .card__body { display: block; }
 
@@ -190,8 +200,8 @@ body {
  */
 .card__title {
   display: inline;
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 17.6px;
+  line-height: 26.4px;
   background-image: linear-gradient(var(--link), var(--link));
   background-repeat: no-repeat;
   background-position: right bottom;
@@ -205,8 +215,8 @@ body {
 }
 .card__desc {
   margin: 4px 0 0;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 15.4px;
+  line-height: 22px;
   color: var(--text-faint);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -228,19 +238,20 @@ body {
 .card__target {
   font-family: var(--font-mono);
   font-weight: 500;
-  font-size: 11px;
-  line-height: 14px;
-  letter-spacing: 0.02em;
+  font-size: 12.1px;
+  line-height: 15.4px;
+  letter-spacing: 0;
   color: var(--text-faint);
   overflow-wrap: anywhere;
 }
 
-.card__arrow {
+.footer {
+  font-family: var(--font-mono);
+  font-size: 12.1px;
+  line-height: 15.4px;
+  letter-spacing: 0.02em;
   color: var(--text-faint);
-  line-height: 24px;
-  transition: transform 150ms var(--ease), color 0s;
 }
-.card:hover .card__arrow { transform: translateX(2px); }
 
 @keyframes row-fade {
   from { opacity: 0; }
@@ -253,7 +264,7 @@ body {
   flex-wrap: wrap;
   gap: 20px;
   /* Adds to the .masthead gap, so the icons clear the logo. */
-  margin-top: 8px;
+  margin-top: 28px;
 }
 
 .social {
@@ -261,7 +272,6 @@ body {
   color: var(--text);
   text-decoration: none;
 }
-.social:hover { color: var(--link); }
 .social:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 
 /*
@@ -275,26 +285,31 @@ body {
   background-color: currentColor;
   -webkit-mask: var(--icon) center / contain no-repeat;
   mask: var(--icon) center / contain no-repeat;
-  transition: background-color 150ms var(--ease);
+  /*
+   * Every icon fills its 24x24 viewBox, but the artwork inside leaves a
+   * different amount of empty space below it. --nudge is that space, so the
+   * drawn bottoms line up across the row.
+   */
+  transform: translateY(var(--nudge, 0));
 }
 
-.social__icon--youtube { --icon: url('/assets/icons/youtube.svg'); }
+.social__icon--youtube { --icon: url('/assets/icons/youtube.svg'); --nudge: 3.5px; }
 .social__icon--linkedin { --icon: url('/assets/icons/linkedin.svg'); }
 .social__icon--x { --icon: url('/assets/icons/x.svg'); }
-.social__icon--github { --icon: url('/assets/icons/github.svg'); }
-.social__icon--discord { --icon: url('/assets/icons/discord.svg'); }
+.social__icon--github { --icon: url('/assets/icons/github.svg'); --nudge: 0.3px; }
+.social__icon--discord { --icon: url('/assets/icons/discord.svg'); --nudge: 2.9px; }
 
 @media (max-width: 767px) {
   .page { padding: 48px 16px 40px; gap: 32px; }
   .masthead { margin-bottom: 28px; }
+  .socials { margin-top: 20px; }
   .logo { width: 190px; height: 36px; }
-  .card { grid-template-columns: 24px 1fr 16px; gap: 12px; padding: 16px 4px; min-height: 44px; }
+  .card { grid-template-columns: 24px 1fr; gap: 12px; padding: 16px 4px; min-height: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .masthead, .card { animation: none; }
-  .card__title, .card__arrow { transition: none; }
-  .logo, .social__icon { transition: none; }
+  .card__title { transition: none; }
 }
 </style>
 </head>
@@ -314,34 +329,33 @@ body {
     <section>
       <div class="links">
       <a class="card" href="https://render.com/startups">
-        <span class="card__index" aria-hidden="true">01</span>
+        <span class="card__mark card__mark--form" aria-hidden="true"></span>
         <span class="card__body">
           <span class="card__title">Funded founder? Apply to the Render startup program</span>
-          
+          <span class="card__desc">Build and scale your startup&#39;s apps and agents on infrastructure developers love, and get up to $100,000 in credits through Render for Startups.</span>
           <span class="card__meta"><img class="card__icon" src="https://render.com/favicon.ico" alt="" loading="lazy"><span class="card__target">render.com/startups</span></span>
         </span>
-        <span class="card__arrow" aria-hidden="true">&#8594;</span>
       </a>
       <a class="card" href="https://render.com/">
-        <span class="card__index" aria-hidden="true">02</span>
+        <span class="card__mark card__mark--render" aria-hidden="true"></span>
         <span class="card__body">
-          <span class="card__title">Website</span>
-          
+          <span class="card__title">Render website</span>
+          <span class="card__desc">Deploy and scale any app or agent from your first user to your billionth. Build faster on intuitive cloud infrastructure for the modern web.</span>
           <span class="card__meta"><img class="card__icon" src="https://render.com/favicon.ico" alt="" loading="lazy"><span class="card__target">render.com</span></span>
         </span>
-        <span class="card__arrow" aria-hidden="true">&#8594;</span>
       </a>
       <a class="card" href="https://render.com/docs">
-        <span class="card__index" aria-hidden="true">03</span>
+        <span class="card__mark card__mark--info" aria-hidden="true"></span>
         <span class="card__body">
-          <span class="card__title">Docs</span>
-          
+          <span class="card__title">Render docs</span>
+          <span class="card__desc">Guides and reference for deploying web services, static sites, workers, cron jobs, Postgres, and Key Value on Render.</span>
           <span class="card__meta"><img class="card__icon" src="https://render.com/favicon.ico" alt="" loading="lazy"><span class="card__target">render.com/docs</span></span>
         </span>
-        <span class="card__arrow" aria-hidden="true">&#8594;</span>
       </a>
       </div>
     </section>
+
+    <footer class="footer">&copy; 2026 render.com</footer>
   </main>
 <script>
 addEventListener('error', function (event) {

@@ -3,7 +3,7 @@ render one page each, commit the pages that changed, deploy, and say so in Slack
 
 Every `await ctx.run(...)` below is a separate durable run on its own instance, with
 that package's retry policy, tracked in the dashboard. The per-URL stages fan out
-through `_map_in_batches`, so the run opens at most BATCH_SIZE of them at a time.
+through `map_in_batches`, so the run opens at most batch.py's BATCH_SIZE at a time.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 from typing import Any, TypedDict, cast
 
 from render import TaskContext
@@ -21,6 +21,7 @@ from render_lab_tasks_github.list_tree import list_tree
 from render_lab_tasks_github.types import CommitFilesFileInput
 from render_lab_tasks_http.request import request
 from render_lab_tasks_notion.query_database import query_database
+from render_lab_tasks_notion.types import PageDTO
 from render_lab_tasks_render.await_deploy import await_deploy
 from render_lab_tasks_render.trigger_deploy import trigger_deploy
 from render_lab_tasks_render_kv.get import get as kv_get
@@ -29,23 +30,27 @@ from render_lab_tasks_scrape.extract_metadata import extract_metadata
 from render_lab_tasks_slack.post_message import post_message
 
 from grouplink.app import app
+from grouplink.batch import map_in_batches
 from grouplink.config import RebuildInput, assert_writable, load_config
+from grouplink.icons import DEFAULT_ICON
 from grouplink.links import (
-    LinkRow,
     PersonPage,
+    PersonRow,
     SkippedRow,
+    assert_default_slug,
     card_description,
-    favicon_url,
     group_by_person,
     meta_cache_key,
-    page_path,
+    page_paths_for,
     skipped_rows,
+    to_card,
     to_link_rows,
     to_person_rows,
     unique_urls,
+    unknown_icons,
     visible_rows,
 )
-from grouplink.page import LinkCard, PageModel, render_page
+from grouplink.page import PageModel, render_page
 
 log = logging.getLogger(__name__)
 
@@ -57,10 +62,6 @@ class CachedMeta(TypedDict):
 
 
 EMPTY_META: CachedMeta = {"description": ""}
-
-# Fan-out width for the per-URL stages. Without it a 100-row database opens 100
-# concurrent runs per stage and hits every linked site at once.
-BATCH_SIZE = 10
 
 # Statuses that mean the URL resolved but refused an unadorned GET. X answers 403 and
 # LinkedIn answers 999 for a request with no browser fingerprint, so neither is dead.
@@ -118,17 +119,10 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
     )
 
     people = to_person_rows(people_pages)
-    if not any(person.slug == cfg.default_slug for person in people):
-        raise ValueError(
-            f'SITE_DEFAULT_SLUG is "{cfg.default_slug}", '
-            "which matches no Slug in the People database"
-        )
+    assert_default_slug(people, cfg.default_slug)
     pages = group_by_person(visible_rows(to_link_rows(link_pages)), people)
 
-    # A row you added in Notion that never reaches a page is otherwise invisible.
-    skipped = skipped_rows(link_pages, people)
-    for row in skipped:
-        log.info('skipped "%s": %s', row.title, row.reason)
+    skipped = _report_notion_problems(link_pages, people)
 
     # A link on three pages is one URL to look up, scrape, and health-check.
     rows = [row for page in pages for row in page.rows]
@@ -136,7 +130,7 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
 
     # 2) Batched fan-out: look for each card's metadata in Key Value first.
     meta_by_url: dict[str, CachedMeta] = {}
-    cached = await _map_in_batches(
+    cached = await map_in_batches(
         card_urls, lambda url, _i: ctx.run(kv_get, {"key": meta_cache_key(url)})
     )
     for url, entry in zip(card_urls, cached, strict=True):
@@ -146,7 +140,7 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
 
     # 3) Batched fan-out: scrape only the misses.
     miss_urls = [url for url in card_urls if url not in meta_by_url]
-    scraped = await _map_in_batches(
+    scraped = await map_in_batches(
         miss_urls, lambda url, _i: ctx.run(extract_metadata, {"url": url})
     )
     scraped_meta: list[CachedMeta] = [
@@ -155,7 +149,7 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
     meta_by_url.update(zip(miss_urls, scraped_meta, strict=True))
 
     # 4) Batched fan-out: write the fresh metadata back with a TTL.
-    await _map_in_batches(
+    await map_in_batches(
         miss_urls,
         lambda url, i: ctx.run(
             kv_set,
@@ -171,7 +165,7 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
 
     # 5) Batched fan-out: health-check every link. tasks-http has no HEAD method, so
     #    this is a GET whose body we discard.
-    checks = await _map_in_batches(
+    checks = await map_in_batches(
         card_urls, lambda url, _i: ctx.run(request, {"method": "GET", "url": url})
     )
     dead_links = [
@@ -185,9 +179,8 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
     files: list[SiteFile] = []
     for page in pages:
         content = render_page(_to_model(page, meta_by_url))
-        files.append({"path": page_path(cfg.site_dir, page.person.slug), "content": content})
-        if page.person.slug == cfg.default_slug:
-            files.append({"path": page_path(cfg.site_dir, ""), "content": content})
+        paths = page_paths_for(cfg.site_dir, page.person.slug, cfg.default_slug)
+        files.extend({"path": path, "content": content} for path in paths)
 
     result: RebuildResult = {
         "pageCount": len(pages),
@@ -216,22 +209,20 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
     tree = await ctx.run(list_tree, {"repo": repo, "ref": cfg.branch})
     on_branch = set(tree["paths"])
     existing = [file for file in files if file["path"] in on_branch]
-    currents = await _map_in_batches(
+    currents = await map_in_batches(
         existing,
         lambda file, _i: ctx.run(
             get_file_contents, {"repo": repo, "path": file["path"], "ref": cfg.branch}
         ),
     )
     current_by_path = {
-        file["path"]: current["content"]
-        for file, current in zip(existing, currents, strict=True)
+        file["path"]: current["content"] for file, current in zip(existing, currents, strict=True)
     }
 
     changed = [
         file
         for file in files
-        if file["path"] not in current_by_path
-        or current_by_path[file["path"]] != file["content"]
+        if file["path"] not in current_by_path or current_by_path[file["path"]] != file["content"]
     ]
     result["changedPaths"] = [file["path"] for file in changed]
 
@@ -250,9 +241,7 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
             "owner": cfg.repo_owner,
             "repo": cfg.repo_name,
             "branch": cfg.branch,
-            "message": (
-                f"chore(site): rebuild {len(changed)} page(s) ({len(card_urls)} links)"
-            ),
+            "message": (f"chore(site): rebuild {len(changed)} page(s) ({len(card_urls)} links)"),
             "files": cast(list[CommitFilesFileInput], changed),
         },
     )
@@ -264,18 +253,28 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
         trigger_deploy, {"serviceId": cfg.static_site_id, "commitId": commit["commitSha"]}
     )
     result["deployId"] = deploy["deployId"]
-    await ctx.run(
-        await_deploy, {"serviceId": cfg.static_site_id, "deployId": deploy["deployId"]}
-    )
+    await ctx.run(await_deploy, {"serviceId": cfg.static_site_id, "deployId": deploy["deployId"]})
 
     # 10) Chained run: post the outcome.
     await _notify(
         ctx,
-        f"grouplink is live with {len(card_urls)} links across {len(pages)} pages. "
-        f"{cfg.site_url}",
+        f"grouplink is live with {len(card_urls)} links across {len(pages)} pages. {cfg.site_url}",
         dead_links,
     )
     return result
+
+
+def _report_notion_problems(link_pages: list[PageDTO], people: list[PersonRow]) -> list[SkippedRow]:
+    """Logs what a person can see in Notion but the site does not show: a row that
+    reaches no page, and an Icon option no file matches. Both are otherwise silent.
+    Returns the skipped rows, which the run reports as part of its result.
+    """
+    skipped = skipped_rows(link_pages, people)
+    for row in skipped:
+        log.info('skipped "%s": %s', row.title, row.reason)
+    for name in unknown_icons(link_pages):
+        log.info('unknown Icon "%s", using %s', name, DEFAULT_ICON)
+    return skipped
 
 
 async def _report_failure(ctx: TaskContext, error: BaseException) -> None:
@@ -284,19 +283,6 @@ async def _report_failure(ctx: TaskContext, error: BaseException) -> None:
         await _notify(ctx, f"grouplink.rebuild failed: {error}", [])
     except Exception:
         log.exception("could not post the failure to Slack")
-
-
-async def _map_in_batches[T, R](
-    items: list[T], fn: Callable[[T, int], Awaitable[R]]
-) -> list[R]:
-    """asyncio.gather in fixed-size batches, in input order."""
-    results: list[R] = []
-    for start in range(0, len(items), BATCH_SIZE):
-        batch = items[start : start + BATCH_SIZE]
-        results.extend(
-            await asyncio.gather(*(fn(item, start + i) for i, item in enumerate(batch)))
-        )
-    return results
 
 
 def _unreachable(check: Mapping[str, Any] | None) -> bool:
@@ -326,20 +312,12 @@ def _to_model(page: PersonPage, meta_by_url: dict[str, CachedMeta]) -> PageModel
     return PageModel(
         name=page.person.name,
         tagline=page.person.tagline,
-        cards=[_to_card(row, meta_by_url.get(row.url)) for row in page.rows],
-    )
-
-
-def _to_card(row: LinkRow, meta: CachedMeta | None) -> LinkCard:
-    return LinkCard(
-        title=row.title,
-        url=row.url,
-        description=(meta or EMPTY_META)["description"],
-        icon_url=favicon_url(row.url),
+        cards=[
+            to_card(row, meta_by_url.get(row.url, EMPTY_META)["description"]) for row in page.rows
+        ],
     )
 
 
 async def _notify(ctx: TaskContext, text: str, dead_links: list[str]) -> None:
     body = f"{text}\nUnreachable: {', '.join(dead_links)}" if dead_links else text
     await ctx.run(post_message, {"text": body})
-

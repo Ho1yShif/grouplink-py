@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from render_lab_tasks_notion.types import PageDTO, PropertyValue
 
+from grouplink.icons import DEFAULT_ICON, IconName, is_icon_name
 from grouplink.jsurl import parse as parse_url
+from grouplink.page import LinkCard
 
 
 @dataclass(frozen=True)
@@ -20,6 +22,21 @@ class LinkRow:
     everyone: bool
     #: Notion page ids of the People rows this link belongs to.
     person_ids: list[str]
+    #: Which file under site/assets/link-icons the card draws.
+    icon: IconName
+
+
+class CardSource(Protocol):
+    """The three fields a card needs from a row, so the seed links fit too."""
+
+    @property
+    def title(self) -> str: ...
+
+    @property
+    def url(self) -> str: ...
+
+    @property
+    def icon(self) -> IconName: ...
 
 
 @dataclass(frozen=True)
@@ -53,73 +70,90 @@ def _read_string(value: PropertyValue | None) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def _read_icon_option(value: PropertyValue | None) -> str:
+    """Notion flattens a select property to the option name, or None when empty."""
+    return _read_string(value).lower()
+
+
+def to_icon_name(value: PropertyValue | None) -> IconName:
+    """The icon a link row draws, whatever its Icon cell holds."""
+    name = _read_icon_option(value)
+    return name if is_icon_name(name) else DEFAULT_ICON
+
+
 def _person_ids(value: PropertyValue | None) -> list[str]:
     return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
 
 
-def to_link_rows(pages: list[PageDTO]) -> list[LinkRow]:
-    """Link rows, in Notion order.
+def read_link_row(page: PageDTO) -> LinkRow:
+    """The link columns of one Notion page.
+
+    Both the row builder and the skip report read rows through here, so the two cannot
+    disagree about what a column means.
 
     Notion's queryDatabase hoists the title column to `page["title"]` and leaves every
     column in `page["properties"]`. `page["url"]` is the Notion page itself, not the
     link — the link lives in the `URL` property.
     """
-    rows: list[LinkRow] = []
+    props = page["properties"]
+    return LinkRow(
+        title=_read_string(page["title"]) or _read_string(props.get("Title")),
+        url=_read_string(props.get("URL")),
+        visible=props.get("Visible") is not False,
+        everyone=props.get("Everyone") is True,
+        person_ids=_person_ids(props.get("People")),
+        icon=to_icon_name(props.get("Icon")),
+    )
 
-    for page in pages:
-        props = page["properties"]
-        url = _read_string(props.get("URL"))
-        title = _read_string(page["title"]) or _read_string(props.get("Title"))
-        if not url or not title:
-            continue
 
-        rows.append(
-            LinkRow(
-                title=title,
-                url=url,
-                visible=props.get("Visible") is not False,
-                everyone=props.get("Everyone") is True,
-                person_ids=_person_ids(props.get("People")),
-            )
-        )
+def to_link_rows(pages: list[PageDTO]) -> list[LinkRow]:
+    """Every row that has both a title and a URL, in the order Notion returned them."""
+    rows = [read_link_row(page) for page in pages]
+    return [row for row in rows if row.url and row.title]
 
-    return rows
+
+def _skip_reason(row: LinkRow, known_ids: frozenset[str]) -> str:
+    """Why this row renders nowhere, or "" when it renders. Checks run in read order."""
+    if not row.url:
+        return "no URL"
+    if not row.title:
+        return "no Title"
+    if not row.visible:
+        return "Visible is unchecked"
+    if row.everyone or any(person_id in known_ids for person_id in row.person_ids):
+        return ""
+    if not row.person_ids:
+        return "no People relation and Everyone is unchecked"
+    return "its People relation points at no row in the People database"
 
 
 def skipped_rows(pages: list[PageDTO], people: list[PersonRow]) -> list[SkippedRow]:
     """Why a row you can see in Notion is missing from the site.
 
-    Re-reads the raw pages so it can name rows that `to_link_rows` drops before they
-    become a LinkRow.
+    Reads every page, so it can name the rows `to_link_rows` drops as well as the ones
+    no page claims.
     """
-    person_ids = {person.id for person in people}
+    known_ids = frozenset(person.id for person in people)
     skipped: list[SkippedRow] = []
 
     for page in pages:
-        props = page["properties"]
-        url = _read_string(props.get("URL"))
-        title = _read_string(page["title"]) or _read_string(props.get("Title"))
-        label = title or url or page["id"]
-
-        if not url:
-            skipped.append(SkippedRow(label, url, "no URL"))
-            continue
-        if not title:
-            skipped.append(SkippedRow(label, url, "no Title"))
-            continue
-        if props.get("Visible") is False:
-            skipped.append(SkippedRow(label, url, "Visible is unchecked"))
-            continue
-        ids = _person_ids(props.get("People"))
-        if props.get("Everyone") is not True and not any(id in person_ids for id in ids):
-            reason = (
-                "no People relation and Everyone is unchecked"
-                if not ids
-                else "its People relation points at no row in the People database"
-            )
-            skipped.append(SkippedRow(label, url, reason))
+        row = read_link_row(page)
+        reason = _skip_reason(row, known_ids)
+        if reason:
+            skipped.append(SkippedRow(row.title or row.url or page["id"], row.url, reason))
 
     return skipped
+
+
+def unknown_icons(pages: list[PageDTO]) -> list[str]:
+    """Icon options Notion holds that no file matches.
+
+    Those rows render the default, so the value is otherwise invisible. Reads every
+    row, including hidden ones, because an option with no file is a Notion mistake
+    either way. Distinct, first-seen order.
+    """
+    raw = (_read_icon_option(page["properties"].get("Icon")) for page in pages)
+    return list(dict.fromkeys(name for name in raw if name and not is_icon_name(name)))
 
 
 def to_person_rows(pages: list[PageDTO]) -> list[PersonRow]:
@@ -172,6 +206,30 @@ def page_path(site_dir: str, slug: str) -> str:
     return f"{site_dir}/{slug}/index.html" if slug else f"{site_dir}/index.html"
 
 
+def page_paths_for(site_dir: str, slug: str, default_slug: str) -> list[str]:
+    """Every path one person's page is written to.
+
+    The default person gets a second copy at the site root, so `/` and
+    `/<default slug>` serve the same bytes.
+    """
+    paths = [page_path(site_dir, slug)]
+    if slug == default_slug:
+        paths.append(page_path(site_dir, ""))
+    return paths
+
+
+def assert_default_slug(people: list[PersonRow], default_slug: str) -> None:
+    """Raise unless one of the people carries the default slug.
+
+    A slug that matches nobody would publish a site with no root page, so every
+    caller that renders pages checks it before it renders anything.
+    """
+    if not any(person.slug == default_slug for person in people):
+        raise ValueError(
+            f'SITE_DEFAULT_SLUG is "{default_slug}", which matches no Slug in the People database'
+        )
+
+
 def visible_rows(rows: list[LinkRow]) -> list[LinkRow]:
     """Cards render in the order the Notion database returned them."""
     return [row for row in rows if row.visible]
@@ -188,6 +246,21 @@ def favicon_url(raw_url: str) -> str:
 def card_description(meta: Mapping[str, Any]) -> str:
     """The card blurb. Empty when the page has no meta description."""
     return _read_string(meta.get("description"))
+
+
+def to_card(row: CardSource, description: str) -> LinkCard:
+    """One card, from the Notion row and whatever description the scrape found.
+
+    Takes the row's fields rather than a LinkRow, so the seed links in scripts/ fit
+    too.
+    """
+    return LinkCard(
+        title=row.title,
+        url=row.url,
+        description=description,
+        icon_url=favicon_url(row.url),
+        icon=row.icon,
+    )
 
 
 def meta_cache_key(url: str) -> str:

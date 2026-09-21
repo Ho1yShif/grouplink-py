@@ -15,46 +15,49 @@ from pathlib import Path
 
 import pytest
 
-from grouplink.links import favicon_url
+from grouplink.links import to_card
 from grouplink.page import LinkCard, PageModel, escape_html, render_page, safe_url
+from scripts.placeholder import PEOPLE, TAGLINE, SeedPerson
 
 GOLDEN = Path(__file__).parent / "golden"
 
-TAGLINE = "The fastest path to production for full-stack applications and agents"
+#: The footer year the golden pages were rendered with. Pinned, so the fixtures do
+#: not go stale on 1 January.
+GOLDEN_YEAR = 2026
 
-SHARED = [
-    ("Funded founder? Apply to the Render startup program", "https://render.com/startups"),
-    ("Website", "https://render.com/"),
-]
-
-GOLDEN_MODELS = {
-    "index.html": ("Shifra", SHARED + [("Tutorial | Get started with Render Workflows", "https://render.com/tutorials/render-workflows")]),
-    "shifra.html": ("Shifra", SHARED + [("Tutorial | Get started with Render Workflows", "https://render.com/tutorials/render-workflows")]),
-    "graham.html": ("Graham", SHARED + [("Docs", "https://render.com/docs")]),
-}
+#: The fixture each seed person's page is committed as. The default person is
+#: written twice, so index.html and shifra.html hold the same bytes.
+GOLDEN_FIXTURES = {"shifra": ["index.html", "shifra.html"], "graham": ["graham.html"]}
 
 MODEL = PageModel(
     name="Render",
     tagline="Cloud application hosting for developers.",
     cards=[
-        LinkCard("First", "https://example.com/a", "A", "https://example.com/favicon.ico"),
-        LinkCard("Second", "https://example.com/b", "", ""),
+        LinkCard(
+            "First",
+            "https://example.com/a",
+            "A",
+            icon_url="https://example.com/favicon.ico",
+            icon="arrow",
+        ),
+        LinkCard("Second", "https://example.com/b", "", icon_url="", icon="workflows"),
     ],
 )
 
 
-@pytest.mark.parametrize("fixture", sorted(GOLDEN_MODELS))
-def test_reproduces_the_committed_page_byte_for_byte(fixture: str) -> None:
-    name, links = GOLDEN_MODELS[fixture]
+@pytest.mark.parametrize(
+    ("person", "fixture"),
+    [(person, fixture) for person in PEOPLE for fixture in GOLDEN_FIXTURES[person.slug]],
+    ids=lambda value: value if isinstance(value, str) else value.slug,
+)
+def test_reproduces_the_committed_page_byte_for_byte(person: SeedPerson, fixture: str) -> None:
     html = render_page(
         PageModel(
-            name=name,
+            name=person.name,
             tagline=TAGLINE,
-            cards=[
-                LinkCard(title=title, url=url, description="", icon_url=favicon_url(url))
-                for title, url in links
-            ],
-        )
+            cards=[to_card(link, link.description) for link in person.links],
+        ),
+        year=GOLDEN_YEAR,
     )
     assert html == (GOLDEN / fixture).read_text()
 
@@ -74,7 +77,13 @@ class TestRenderPage:
             replace(
                 MODEL,
                 cards=[
-                    LinkCard("<script>alert(1)</script>", "https://example.com", 'a "b" & c', "")
+                    LinkCard(
+                        "<script>alert(1)</script>",
+                        "https://example.com",
+                        'a "b" & c',
+                        icon_url="",
+                        icon="arrow",
+                    )
                 ],
             )
         )
@@ -83,9 +92,8 @@ class TestRenderPage:
         assert "a &quot;b&quot; &amp; c" in html
 
     def test_drops_a_javascript_href(self) -> None:
-        html = render_page(
-            replace(MODEL, cards=[LinkCard("Bad", "javascript:alert(1)", "", "")])
-        )
+        card = LinkCard("Bad", "javascript:alert(1)", "", icon_url="", icon="arrow")
+        html = render_page(replace(MODEL, cards=[card]))
         assert "javascript:" not in html
         assert 'href="#"' in html
 
@@ -93,6 +101,14 @@ class TestRenderPage:
         html = render_page(replace(MODEL, tagline="First half\nsecond half"))
         assert 'class="tagline"' not in html
         assert '<meta name="description" content="First half second half">' in html
+
+    def test_draws_the_card_icon_the_model_names(self) -> None:
+        html = render_page(MODEL)
+        assert 'class="card__mark card__mark--workflows"' in html
+        assert 'class="card__mark card__mark--arrow"' in html
+
+    def test_reads_the_footer_year_from_its_argument(self) -> None:
+        assert "&copy; 1999 render.com" in render_page(MODEL, year=1999)
 
     def test_always_renders_the_same_icon_row(self) -> None:
         assert 'class="social__icon social__icon--github"' in render_page(MODEL)

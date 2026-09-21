@@ -20,7 +20,9 @@ from __future__ import annotations
 import base64
 import hashlib
 from dataclasses import dataclass, field
+from datetime import date
 
+from grouplink.icons import ICON_NAMES, IconName
 from grouplink.jsurl import parse as parse_url
 
 
@@ -36,6 +38,8 @@ class LinkCard:
     description: str
     #: `<origin>/favicon.ico`, hidden on error.
     icon_url: str
+    #: Which file under site/assets/link-icons the card draws in its left column.
+    icon: IconName
 
 
 @dataclass(frozen=True)
@@ -83,6 +87,13 @@ def safe_url(value: str) -> str:
 # the policy allows the <style> block by hash and no style attribute at all.
 ROW_STAGGER = "\n".join(
     f".card:nth-child({i + 1}) {{ animation-delay: {i * 30}ms; }}" for i in range(20)
+)
+
+# One mask rule per icon file. Generated into the <style> block for the same
+# reason ROW_STAGGER is.
+ICON_MASKS = "\n".join(
+    f".card__mark--{name} {{ --mark: url('/assets/link-icons/{name}.png'); }}"
+    for name in ICON_NAMES
 )
 
 _STYLES_HEAD = """
@@ -153,7 +164,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-default);
+  font-family: var(--font-brand);
   font-weight: 400;
   font-size: 16px;
   line-height: 24px;
@@ -162,7 +173,7 @@ body {
 }
 
 .page {
-  max-width: 560px;
+  max-width: 640px;
   margin: 0 auto;
   padding: 96px 32px 64px;
   display: flex;
@@ -187,7 +198,6 @@ body {
   display: block;
   color: var(--text);
 }
-.logo-link:hover { color: var(--link); }
 .logo-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 
 /*
@@ -199,7 +209,6 @@ body {
   width: 240px;
   height: 46px;
   background-color: currentColor;
-  transition: background-color 150ms var(--ease);
   -webkit-mask: url('/assets/render-logo-white.png') center / contain no-repeat;
   mask: url('/assets/render-logo-white.png') center / contain no-repeat;
 }
@@ -208,7 +217,7 @@ body {
 
 .card {
   display: grid;
-  grid-template-columns: 32px 1fr 16px;
+  grid-template-columns: 32px 1fr;
   align-items: start;
   gap: 16px;
   padding: 18px 12px;
@@ -220,21 +229,28 @@ body {
 }
 """
 
-_STYLES_TAIL = """
+_STYLES_MID = """
 
 .card:hover,
 .card:focus-visible { background: var(--row-hover); }
 .card:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
-.card__index {
-  font-family: var(--font-mono);
-  font-weight: 500;
-  font-size: 12px;
-  line-height: 24px;
-  letter-spacing: 0.02em;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-faint);
+/*
+ * The icon files are dark artwork on transparency, so an <img> would disappear
+ * against the dark background. Each one is a mask instead, painted with the
+ * faint text color. The top margin sits the 20px square on the title's cap line.
+ */
+.card__mark {
+  width: 20px;
+  height: 20px;
+  margin-top: 3px;
+  background-color: var(--text-faint);
+  -webkit-mask: var(--mark) center / contain no-repeat;
+  mask: var(--mark) center / contain no-repeat;
 }
+"""
+
+_STYLES_TAIL = """
 
 .card__body { display: block; }
 
@@ -247,8 +263,8 @@ _STYLES_TAIL = """
  */
 .card__title {
   display: inline;
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 17.6px;
+  line-height: 26.4px;
   background-image: linear-gradient(var(--link), var(--link));
   background-repeat: no-repeat;
   background-position: right bottom;
@@ -262,8 +278,8 @@ _STYLES_TAIL = """
 }
 .card__desc {
   margin: 4px 0 0;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 15.4px;
+  line-height: 22px;
   color: var(--text-faint);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -285,19 +301,20 @@ _STYLES_TAIL = """
 .card__target {
   font-family: var(--font-mono);
   font-weight: 500;
-  font-size: 11px;
-  line-height: 14px;
-  letter-spacing: 0.02em;
+  font-size: 12.1px;
+  line-height: 15.4px;
+  letter-spacing: 0;
   color: var(--text-faint);
   overflow-wrap: anywhere;
 }
 
-.card__arrow {
+.footer {
+  font-family: var(--font-mono);
+  font-size: 12.1px;
+  line-height: 15.4px;
+  letter-spacing: 0.02em;
   color: var(--text-faint);
-  line-height: 24px;
-  transition: transform 150ms var(--ease), color 0s;
 }
-.card:hover .card__arrow { transform: translateX(2px); }
 
 @keyframes row-fade {
   from { opacity: 0; }
@@ -310,7 +327,7 @@ _STYLES_TAIL = """
   flex-wrap: wrap;
   gap: 20px;
   /* Adds to the .masthead gap, so the icons clear the logo. */
-  margin-top: 8px;
+  margin-top: 28px;
 }
 
 .social {
@@ -318,7 +335,6 @@ _STYLES_TAIL = """
   color: var(--text);
   text-decoration: none;
 }
-.social:hover { color: var(--link); }
 .social:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 
 /*
@@ -332,30 +348,35 @@ _STYLES_TAIL = """
   background-color: currentColor;
   -webkit-mask: var(--icon) center / contain no-repeat;
   mask: var(--icon) center / contain no-repeat;
-  transition: background-color 150ms var(--ease);
+  /*
+   * Every icon fills its 24x24 viewBox, but the artwork inside leaves a
+   * different amount of empty space below it. --nudge is that space, so the
+   * drawn bottoms line up across the row.
+   */
+  transform: translateY(var(--nudge, 0));
 }
 
-.social__icon--youtube { --icon: url('/assets/icons/youtube.svg'); }
+.social__icon--youtube { --icon: url('/assets/icons/youtube.svg'); --nudge: 3.5px; }
 .social__icon--linkedin { --icon: url('/assets/icons/linkedin.svg'); }
 .social__icon--x { --icon: url('/assets/icons/x.svg'); }
-.social__icon--github { --icon: url('/assets/icons/github.svg'); }
-.social__icon--discord { --icon: url('/assets/icons/discord.svg'); }
+.social__icon--github { --icon: url('/assets/icons/github.svg'); --nudge: 0.3px; }
+.social__icon--discord { --icon: url('/assets/icons/discord.svg'); --nudge: 2.9px; }
 
 @media (max-width: 767px) {
   .page { padding: 48px 16px 40px; gap: 32px; }
   .masthead { margin-bottom: 28px; }
+  .socials { margin-top: 20px; }
   .logo { width: 190px; height: 36px; }
-  .card { grid-template-columns: 24px 1fr 16px; gap: 12px; padding: 16px 4px; min-height: 44px; }
+  .card { grid-template-columns: 24px 1fr; gap: 12px; padding: 16px 4px; min-height: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .masthead, .card { animation: none; }
-  .card__title, .card__arrow { transition: none; }
-  .logo, .social__icon { transition: none; }
+  .card__title { transition: none; }
 }
 """
 
-STYLES = _STYLES_HEAD + ROW_STAGGER + _STYLES_TAIL
+STYLES = _STYLES_HEAD + ROW_STAGGER + _STYLES_MID + ICON_MASKS + _STYLES_TAIL
 
 # A favicon that 404s leaves a broken-image glyph, and no CSS selector matches a
 # failed image. `error` does not bubble, so the listener runs in the capture phase.
@@ -411,16 +432,15 @@ def _display_target(url: str) -> str:
     return target
 
 
-def _render_card(card: LinkCard, index: int) -> str:
+def _render_card(card: LinkCard) -> str:
     href = escape_html(safe_url(card.url))
     title = escape_html(card.title)
-    number = str(index + 1).rjust(2, "0")
     desc = (
         f'<span class="card__desc">{escape_html(card.description)}</span>'
         if card.description
         else ""
     )
-    icon = (
+    favicon = (
         f'<img class="card__icon" src="{escape_html(safe_url(card.icon_url))}" '
         'alt="" loading="lazy">'
         if card.icon_url
@@ -428,19 +448,18 @@ def _render_card(card: LinkCard, index: int) -> str:
     )
     target = _display_target(card.url)
     meta = (
-        f'<span class="card__meta">{icon}'
+        f'<span class="card__meta">{favicon}'
         f'<span class="card__target">{escape_html(target)}</span></span>'
         if target
         else ""
     )
     return f"""      <a class="card" href="{href}">
-        <span class="card__index" aria-hidden="true">{number}</span>
+        <span class="card__mark card__mark--{escape_html(card.icon)}" aria-hidden="true"></span>
         <span class="card__body">
           <span class="card__title">{title}</span>
           {desc}
           {meta}
         </span>
-        <span class="card__arrow" aria-hidden="true">&#8594;</span>
       </a>"""
 
 
@@ -461,7 +480,7 @@ SOCIALS: list[SocialLink] = [
 
 def _render_social(social: SocialLink) -> str:
     href = escape_html(safe_url(social.url))
-    icon = social.label.strip().lower()
+    icon = escape_html(social.label.strip().lower())
     label = escape_html(social.label)
     return (
         f'        <a class="social" href="{href}" aria-label="{label}">'
@@ -492,9 +511,14 @@ def _one_line(tagline: str) -> str:
     return "".join(out).strip()
 
 
-def render_page(model: PageModel) -> str:
+def render_page(model: PageModel, year: int | None = None) -> str:
+    """`year` is the footer's copyright year, read from the clock when it is None.
+
+    Taking it as an argument keeps the golden test stable across a new year.
+    """
+    footer_year = date.today().year if year is None else year
     tagline_text = _one_line(model.tagline)
-    cards = "\n".join(_render_card(card, i) for i, card in enumerate(model.cards))
+    cards = "\n".join(_render_card(card) for card in model.cards)
     socials = "\n".join(_render_social(social) for social in SOCIALS)
     socials_block = f"""      <nav class="socials" aria-label="Social">
 {socials}
@@ -527,6 +551,8 @@ def render_page(model: PageModel) -> str:
 {cards}
       </div>
     </section>
+
+    <footer class="footer">&copy; {footer_year} render.com</footer>
   </main>
 <script>{ICON_FALLBACK_SCRIPT}</script>
 </body>
