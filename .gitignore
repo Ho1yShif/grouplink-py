@@ -9,3 +9,6 @@ tmp/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+
+# Deploy runbook, kept local.
+manual.md
