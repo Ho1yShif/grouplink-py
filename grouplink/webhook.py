@@ -49,11 +49,7 @@ class Receiver:
         )
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if (
-            scope["type"] != "http"
-            or scope["path"] != NOTION_PATH
-            or scope["method"] != "POST"
-        ):
+        if scope["type"] != "http" or scope["path"] != NOTION_PATH or scope["method"] != "POST":
             await self._server(scope, receive, send)
             return
 
@@ -99,7 +95,7 @@ def build_receiver() -> Receiver:
             dispatch=dispatcher.start,
             task=os.environ.get("REBUILD_TASK", "grouplink.rebuild"),
             secret=os.environ.get("NOTION_WEBHOOK_SECRET"),
-            debounce_ms=env_int(os.environ.get("DEBOUNCE_MS"), DEFAULT_DEBOUNCE_MS),
+            debounce_ms=env_int("DEBOUNCE_MS", os.environ.get("DEBOUNCE_MS"), DEFAULT_DEBOUNCE_MS),
         ),
     )
 
@@ -107,7 +103,7 @@ def build_receiver() -> Receiver:
 def main() -> None:
     import uvicorn
 
-    port = env_int(os.environ.get("PORT"), 3000)
+    port = env_int("PORT", os.environ.get("PORT"), 3000)
     log.info("webhook receiver listening on %s", port)
     uvicorn.run(build_receiver(), host="0.0.0.0", port=port)
 

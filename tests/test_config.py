@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from grouplink.config import assert_writable, load_config
+from grouplink.config import assert_writable, env_int, load_config
 
 ENV = {
     "NOTION_LINKS_DATABASE_ID": "db_links",
@@ -42,8 +42,12 @@ class TestLoadConfig:
         assert cfg.default_slug == "shifra"
         assert cfg.site_dir == "site"
 
-    def test_falls_back_on_a_non_numeric_limit(self) -> None:
-        assert load(LINKS_LIMIT="lots").limit == 100
+    def test_reads_the_limit_from_the_env(self) -> None:
+        assert load(LINKS_LIMIT="25").limit == 25
+
+    def test_rejects_a_non_numeric_limit(self) -> None:
+        with pytest.raises(ValueError, match="LINKS_LIMIT"):
+            load(LINKS_LIMIT="lots")
 
     def test_names_the_variable_that_is_missing(self) -> None:
         with pytest.raises(ValueError, match="NOTION_LINKS_DATABASE_ID"):
@@ -69,3 +73,20 @@ class TestAssertWritable:
             ValueError, match="GITHUB_REPO_OWNER, GITHUB_REPO_NAME, RENDER_STATIC_SITE_ID"
         ):
             assert_writable(load())
+
+
+class TestEnvInt:
+    @pytest.mark.parametrize("value", [None, "", "  "])
+    def test_falls_back_when_the_variable_is_unset_empty_or_whitespace(
+        self, value: str | None
+    ) -> None:
+        assert env_int("LINKS_LIMIT", value, 100) == 100
+
+    @pytest.mark.parametrize("value", ["25", " 25 "])
+    def test_reads_a_whole_number_with_or_without_surrounding_space(self, value: str) -> None:
+        assert env_int("LINKS_LIMIT", value, 100) == 25
+
+    @pytest.mark.parametrize("value", ["-5", "0", "10abc", "1e3", "2.5", "+5", "abc", "١٢"])
+    def test_rejects_anything_that_is_not_a_whole_number_of_1_or_more(self, value: str) -> None:
+        with pytest.raises(ValueError, match="LINKS_LIMIT"):
+            env_int("LINKS_LIMIT", value, 100)

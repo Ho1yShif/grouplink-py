@@ -58,12 +58,20 @@ def env_flag(value: str | None, fallback: bool) -> bool:
     return normalized not in FALSY
 
 
-def env_int(value: str | None, fallback: int) -> int:
-    """Shared with the webhook receiver, which parses its own DEBOUNCE_MS and PORT."""
-    try:
-        return int((value or "").strip())
-    except ValueError:
+def env_int(name: str, value: str | None, fallback: int) -> int:
+    """A whole number from the environment, or the fallback when the variable is unset.
+
+    Anything else raises at startup, because `LINKS_LIMIT=-5` asks Notion for a
+    negative page size and `DEBOUNCE_MS=10s` used to parse as 10 milliseconds.
+    Shared with the webhook receiver, which reads its own DEBOUNCE_MS and PORT.
+    """
+    raw = (value or "").strip()
+    if raw == "":
         return fallback
+
+    if not (raw.isascii() and raw.isdigit()) or int(raw) < 1:
+        raise ValueError(f'{name} must be a whole number of 1 or more, got "{raw}"')
+    return int(raw)
 
 
 def load_config(
@@ -80,9 +88,7 @@ def load_config(
         "NOTION_PEOPLE_DATABASE_ID", ""
     )
     if not people_database_id:
-        raise ValueError(
-            "set NOTION_PEOPLE_DATABASE_ID, or pass peopleDatabaseId in the run input"
-        )
+        raise ValueError("set NOTION_PEOPLE_DATABASE_ID, or pass peopleDatabaseId in the run input")
 
     # Required, because an unset value would silently publish a site with no root page.
     default_slug = environ.get("SITE_DEFAULT_SLUG", "").strip().lower()
@@ -90,14 +96,19 @@ def load_config(
         raise ValueError("set SITE_DEFAULT_SLUG to the slug of the person the root page shows")
 
     dry_run = run_input.get("dryRun")
+    limit = run_input.get("limit")
 
     return RebuildConfig(
         database_id=database_id,
         people_database_id=people_database_id,
-        limit=run_input.get("limit") or env_int(environ.get("LINKS_LIMIT"), 100),
+        limit=limit
+        if limit is not None
+        else env_int("LINKS_LIMIT", environ.get("LINKS_LIMIT"), 100),
         dry_run=env_flag(environ.get("DRY_RUN"), False) if dry_run is None else dry_run,
         default_slug=default_slug,
-        cache_ttl_seconds=env_int(environ.get("METADATA_TTL_SECONDS"), 86_400),
+        cache_ttl_seconds=env_int(
+            "METADATA_TTL_SECONDS", environ.get("METADATA_TTL_SECONDS"), 86_400
+        ),
         repo_owner=environ.get("GITHUB_REPO_OWNER", ""),
         repo_name=environ.get("GITHUB_REPO_NAME", ""),
         branch=environ.get("GITHUB_BRANCH", "main"),
