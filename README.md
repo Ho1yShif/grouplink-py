@@ -1,8 +1,8 @@
 # grouplink
 
 Render's links page. The page is plain HTML on a Render static site. A Render
-Workflow reads the link list from Notion, enriches it, commits `site/index.html`,
-and deploys.
+Workflow reads the link list from Notion, enriches it, commits one page per
+person under `site/`, and deploys.
 
 It replaces a Linktree page that couldn't be styled to brand and was two-thirds
 Linktree's own affiliate marketplace.
@@ -251,7 +251,7 @@ drawn as CSS masks and painted with the text color, so they read on both the
 light and dark background.
 
 The brand woff2 files under `site/assets/fonts/` are commercial faces. If this
-repo needs to stop redistributing them, delete the four `@font-face` blocks and
+repo needs to stop redistributing them, delete the three `@font-face` blocks and
 load Manrope and Roboto Mono instead — the fallback chain already names them.
 
 Assets are referenced from the site root (`/assets/…`) so they resolve the same
@@ -265,7 +265,7 @@ differs by one character is a commit plus a deploy.
 
 ## Deploy
 
-![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Ho1yShif/grouplink-py)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Ho1yShif/grouplink-py)
 
 Blueprints don't support Workflows yet, so the Workflow service is created in the
 Dashboard and everything else comes from [`render.yaml`](render.yaml).
@@ -466,9 +466,9 @@ curl -X POST https://grouplink-webhook.onrender.com/tasks/grouplink.rebuild \
 - `RUN_LIVE=1 uv run pytest tests/test_rebuild_live.py --enable-socket` — Tier 2.
   Hits real Notion, real sites, and a real Key Value instance in dry-run.
 
-`tests/golden/` holds the three pages the TypeScript build committed.
-`tests/test_page.py` renders them again from the same model and asserts byte
-equality, which is what keeps the HTML escaping, the URL normalization, the CSP
+`tests/golden/` holds the three pages the TypeScript build rendered from the seed
+links in `scripts/placeholder.py`. `tests/test_page.py` renders them again from
+that same seed data and asserts byte equality, which is what keeps the HTML escaping, the URL normalization, the CSP
 hashes, and the whitespace from drifting.
 
 `uv run ruff check .`, `uv run ruff format --check .`, and `uv run mypy` cover

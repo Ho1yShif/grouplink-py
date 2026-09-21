@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    # A rebuild commits only pages, and no check reads them.
+    paths-ignore: ['site/**']
+  pull_request:
+
+# A rebuild commits pages to main, so cancel the run an older commit started.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --locked
+
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - run: uv run pytest
+
+      # Render builds from requirements.txt, so a dependency change that skips the
+      # export would deploy a different set of packages than uv.lock pins.
+      - name: requirements.txt matches uv.lock
+        run: |
+          uv export --frozen --no-dev --no-emit-project -o requirements.txt
+          git diff --exit-code -- requirements.txt

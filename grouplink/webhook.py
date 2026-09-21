@@ -18,6 +18,7 @@ from typing import Any
 from render_lab_triggers import create_dispatch_server, render_dispatcher
 
 from grouplink.config import env_int
+from grouplink.logs import configure as configure_logging
 from grouplink.notion_webhook import (
     DEFAULT_DEBOUNCE_MS,
     NotionWebhook,
@@ -103,6 +104,7 @@ def build_receiver() -> Receiver:
 def main() -> None:
     import uvicorn
 
+    configure_logging()
     port = env_int("PORT", os.environ.get("PORT"), 3000)
     log.info("webhook receiver listening on %s", port)
     uvicorn.run(build_receiver(), host="0.0.0.0", port=port)
