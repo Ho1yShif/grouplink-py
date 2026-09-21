@@ -309,9 +309,9 @@ while `WORKFLOW_SLUG` is empty, and step 5 is what fixes it.
    `WORKFLOW_SLUG` blank when it prompts. Note the static site's ID and URL. The
    button reads `render.yaml` from `main`, so push first.
 3. Dashboard → **New > Workflow** on the same repo.
-   Build: `pip install -r requirements.txt`. Start:
-   `render-workflows grouplink.main:app`. Render's Python image does not ship
-   `uv`, so the build installs from the exported requirements file.
+   Build: `pip install -r requirements.txt`. Start: `python -m grouplink.main`.
+   Render's Python image does not ship `uv`, so the build installs from the
+   exported requirements file.
    Turn auto-deploy off — the workflow commits to this repo, and you don't want it
    redeploying itself every time the page changes.
 4. Set the [Configuration](#configuration) vars on the Workflow. The webhook
@@ -485,3 +485,7 @@ upgrade the SDK on its own.
 Each pack exports its own `Workflows` app, and `grouplink/app.py` combines them
 with `Workflows.from_workflows`. Leave a pack out of that call and `ctx.run` on
 one of its tasks fails at runtime. Nothing goes wrong at import.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
