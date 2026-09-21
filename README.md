@@ -84,7 +84,7 @@ copy. It needs `NOTION_TOKEN`, both database IDs, and `SITE_DEFAULT_SLUG` in
 needed.
 
 ```bash
-uv run python scripts/preview.py
+uv run python -m scripts.preview
 python -m http.server 3000 --directory site
 ```
 
@@ -96,8 +96,10 @@ undoes a preview.
 
 `scripts/placeholder.py` regenerates the pages under `site/` from the seed links
 without touching Notion, for looking at the design before the databases exist.
-It writes `/shifra`, `/graham`, and a copy of the root person's page at `/`, the
-same shape a real run produces.
+Run it with `uv run python -m scripts.placeholder`. It writes `/shifra`,
+`/graham`, and a copy of the root person's page at `/`, the same shape a real run
+produces. Both scripts render and write through `scripts/write_pages.py`, so
+neither can disagree with the other about where a page belongs.
 
 ## The Notion databases
 
@@ -110,6 +112,7 @@ There are two. Links:
 | `Visible`  | checkbox | Unchecked rows are dropped.                                                    |
 | `Everyone` | checkbox | Checked puts the link on every person's page.                                  |
 | `People`   | relation | Which pages the link appears on. Relate it to two rows and it appears on both. |
+| `Icon`     | select   | Which icon the card draws. One option per file under `site/assets/link-icons/`. |
 
 People:
 
@@ -125,6 +128,12 @@ is redundant, not contradictory, and a row with neither renders nowhere.
 A person's page is written to `site/<slug>/index.html`. The person named by
 `SITE_DEFAULT_SLUG` is written to `site/index.html` as well, so `/` and their own
 path serve the same page.
+
+`Icon` is matched case-insensitively against the eight names in
+`grouplink/icons.py`: `arrow`, `credits`, `download`, `form`, `info`, `render`,
+`upload`, and `workflows`. An empty cell or an option no file matches renders
+`arrow`, and the run logs every unmatched option. The property name itself is
+case-sensitive, so it has to be spelled exactly `Icon`.
 
 Share both databases with the Notion integration that owns `NOTION_TOKEN`.
 
@@ -165,6 +174,11 @@ The webhook receiver reads its own set, plus `RENDER_API_KEY`:
 | `DISPATCH_TOKEN`        | —                   | Bearer token required on `POST /tasks/:task`.  |
 | `REBUILD_TASK`          | `grouplink.rebuild` | Task the webhook dispatches.                   |
 | `DEBOUNCE_MS`           | `60000`             | Quiet period before an edit starts a run.      |
+
+`LINKS_LIMIT`, `METADATA_TTL_SECONDS`, and `DEBOUNCE_MS` must each be a whole
+number of 1 or more. Anything else fails at startup and names the variable,
+because `DEBOUNCE_MS=10s` used to parse as 10 milliseconds and `LINKS_LIMIT=-5`
+used to ask Notion for a negative page size. Unset or empty still falls back.
 
 Each page's name comes from its People row, not from configuration.
 
@@ -214,6 +228,19 @@ GitHub, so don't set it there.
 build step, inline CSS. It follows Render's brand foundations: semantic color
 tokens with a dark override, PP Neue Montreal for prose, square corners, 1px
 hairlines, and purple reserved for links and focus rings.
+
+Each card is a two-column grid: an icon on the left, then the title, the scraped
+description, and the mono target line. The icon comes from the row's `Icon`
+column. The eight files under `site/assets/link-icons/` are dark artwork on
+transparency, drawn as CSS masks in `var(--text-faint)` so they read on both
+backgrounds. Adding a ninth takes a file, a name in `grouplink/icons.py`, and an
+option in the Notion dropdown. The order the names are declared in decides the
+order of the generated mask rules, which changes the CSP style hash.
+
+The footer carries a copyright year. `render_page` takes it as an argument rather
+than reading the clock, so the golden fixtures stay stable; the default is the
+current year. On 1 January the next run rewrites all three pages, commits, and
+deploys.
 
 The masthead is centered, with the Render wordmark above a row of social icons.
 It is the same on every page. The icons are YouTube, LinkedIn, X, GitHub, and
@@ -444,7 +471,8 @@ curl -X POST https://grouplink-webhook.onrender.com/tasks/grouplink.rebuild \
 equality, which is what keeps the HTML escaping, the URL normalization, the CSP
 hashes, and the whitespace from drifting.
 
-`uv run ruff check .` and `uv run mypy` cover lint and types.
+`uv run ruff check .`, `uv run ruff format --check .`, and `uv run mypy` cover
+lint, formatting, and types.
 
 ## Where the tasks come from
 
