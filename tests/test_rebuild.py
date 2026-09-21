@@ -165,9 +165,7 @@ class Harness:
         self.commits: list[dict[str, Any]] = []
         self.deploys: list[dict[str, Any]] = []
         self.slack_posts: list[dict[str, Any]] = []
-        self.kv = FakeKv(
-            {f"gl:meta:v1:{url}": value for url, value in fakes.cache.items()}
-        )
+        self.kv = FakeKv({f"gl:meta:v1:{url}": value for url, value in fakes.cache.items()})
         self._in_flight = 0
         self.peak_in_flight = 0
         self._http = httpx.AsyncClient(transport=httpx.MockTransport(self._route))
@@ -343,9 +341,7 @@ class Harness:
         """Path -> HTML handed to github.commitFiles on the last run."""
         if not self.trees:
             return {}
-        return {
-            entry["path"]: self.blobs[i] for i, entry in enumerate(self.trees[-1])
-        }
+        return {entry["path"]: self.blobs[i] for i, entry in enumerate(self.trees[-1])}
 
     def committed_html(self) -> str:
         """The root page's HTML."""
@@ -379,9 +375,7 @@ class TestRebuild:
         assert "Hidden" not in html
         assert "render.com/secret" not in html
 
-    async def test_puts_a_persons_links_in_their_own_file_and_nobody_elses(
-        self, env: Any
-    ) -> None:
+    async def test_puts_a_persons_links_in_their_own_file_and_nobody_elses(self, env: Any) -> None:
         h = harness()
         await rebuild.func(h.ctx, {})
         files = h.committed()
@@ -472,7 +466,7 @@ class TestRebuild:
         assert "url('/assets/render-logo-white.png')" in html
         assert "url('/assets/icons/github.svg')" in html
         assert "url('/assets/fonts/RoobertVF.woff2')" in html
-        assert not [m for m in ("\"assets/", "'assets/", "(assets/") if m in html]
+        assert not [m for m in ('"assets/', "'assets/", "(assets/") if m in html]
 
     async def test_carries_the_scraped_description_onto_the_card(self, env: Any) -> None:
         h = harness()
