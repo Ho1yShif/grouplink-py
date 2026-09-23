@@ -129,11 +129,11 @@ A person's page is written to `site/<slug>/index.html`. The person named by
 `SITE_DEFAULT_SLUG` is written to `site/index.html` as well, so `/` and their own
 path serve the same page.
 
-`Icon` is matched case-insensitively against the eight names in
-`grouplink/icons.py`: `arrow`, `credits`, `download`, `form`, `info`, `render`,
-`upload`, and `workflows`. An empty cell or an option no file matches renders
-`arrow`, and the run logs every unmatched option. The property name itself is
-case-sensitive, so it has to be spelled exactly `Icon`.
+`Icon` is matched case-insensitively against the nine names in
+`grouplink/icons.py`: `arrow`, `credits`, `download`, `email`, `form`, `info`,
+`render`, `upload`, and `workflows`. An empty cell or an option no file matches
+renders `arrow`, and the run logs every unmatched option. The property name
+itself is case-sensitive, so it has to be spelled exactly `Icon`.
 
 Share both databases with the Notion integration that owns `NOTION_TOKEN`.
 
@@ -231,9 +231,9 @@ hairlines, and purple reserved for links and focus rings.
 
 Each card is a two-column grid: an icon on the left, then the title, the scraped
 description, and the mono target line. The icon comes from the row's `Icon`
-column. The eight files under `site/assets/link-icons/` are dark artwork on
+column. The nine files under `site/assets/link-icons/` are dark artwork on
 transparency, drawn as CSS masks in `var(--text-faint)` so they read on both
-backgrounds. Adding a ninth takes a file, a name in `grouplink/icons.py`, and an
+backgrounds. Adding a tenth takes a file, a name in `grouplink/icons.py`, and an
 option in the Notion dropdown. The order the names are declared in decides the
 order of the generated mask rules, which changes the CSP style hash.
 

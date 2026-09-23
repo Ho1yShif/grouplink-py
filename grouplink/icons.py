@@ -14,6 +14,7 @@ IconName = Literal[
     "arrow",
     "credits",
     "download",
+    "email",
     "form",
     "info",
     "render",
