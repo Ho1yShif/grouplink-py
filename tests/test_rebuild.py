@@ -495,7 +495,7 @@ class TestRebuild:
         h = harness()
         await rebuild.func(h.ctx, {})
         assert len(h.kv.sets) == 3
-        assert h.kv.sets[0]["ttlSeconds"] == 86_400
+        assert h.kv.sets[0]["ttlSeconds"] == 604_800
 
     async def test_writes_the_cache_in_the_same_json_shape_as_typescript(self, env: Any) -> None:
         h = harness()

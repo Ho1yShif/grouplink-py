@@ -109,7 +109,7 @@ def load_config(
         dry_run=env_flag(environ.get("DRY_RUN"), False) if dry_run is None else dry_run,
         default_slug=default_slug,
         cache_ttl_seconds=env_int(
-            "METADATA_TTL_SECONDS", environ.get("METADATA_TTL_SECONDS"), 86_400
+            "METADATA_TTL_SECONDS", environ.get("METADATA_TTL_SECONDS"), 604_800
         ),
         repo_owner=environ.get("GITHUB_REPO_OWNER", ""),
         repo_name=environ.get("GITHUB_REPO_NAME", ""),

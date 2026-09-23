@@ -19,7 +19,7 @@ grouplink.rebuild
 ├── notion.queryDatabase   ×2   read the link rows and the profiles
 ├── kv.get              ×N      look for cached metadata
 ├── scrape.extractMetadata ×N   scrape the misses
-├── kv.set              ×N      cache them for 24h
+├── kv.set              ×N      cache them for 7 days
 ├── http.request        ×N      health-check every link
 ├── github.listTree             which pages already exist on the branch
 ├── github.getFileContents ×N   skip the pages that haven't changed
@@ -146,24 +146,24 @@ Delete both once the fix ships in a release.
 
 ## Configuration
 
-| Var                                      | Default | Purpose                                         |
-| ---------------------------------------- | ------- | ----------------------------------------------- |
-| `NOTION_TOKEN`                           | —       | Notion integration token.                       |
-| `NOTION_LINKS_DATABASE_ID`               | —       | The links database.                             |
-| `NOTION_PROFILES_DATABASE_ID`            | —       | The profiles database.                          |
-| `REDIS_URL`                              | —       | Key Value instance holding the metadata cache.  |
-| `GITHUB_TOKEN`                           | —       | Write access to the site repo. See below.       |
-| `GITHUB_REPO_OWNER` / `GITHUB_REPO_NAME` | —       | Where the page is committed.                    |
-| `GITHUB_BRANCH`                          | `main`  | Branch to commit to.                            |
-| `RENDER_API_KEY`                         | —       | Used to trigger the static site deploy.         |
-| `RENDER_STATIC_SITE_ID`                  | —       | The static site to deploy.                      |
-| `SITE_URL`                               | —       | Public URL, quoted in the Slack message.        |
-| `SLACK_WEBHOOK_URL`                      | —       | Optional. Unset logs the digest to the console. |
-| `DRY_RUN`                                | `false` | Set `true` to skip the commit and the deploy.   |
-| `SITE_DEFAULT_SLUG`                      | —       | Slug of the profile the root page shows.        |
-| `SITE_DIR`                               | `site`  | Directory the pages are committed under.        |
-| `METADATA_TTL_SECONDS`                   | `86400` | How long a scraped description is cached.       |
-| `LINKS_LIMIT`                            | `100`   | Notion rows to read per run.                    |
+| Var                                      | Default  | Purpose                                         |
+| ---------------------------------------- | -------- | ----------------------------------------------- |
+| `NOTION_TOKEN`                           | —        | Notion integration token.                       |
+| `NOTION_LINKS_DATABASE_ID`               | —        | The links database.                             |
+| `NOTION_PROFILES_DATABASE_ID`            | —        | The profiles database.                          |
+| `REDIS_URL`                              | —        | Key Value instance holding the metadata cache.  |
+| `GITHUB_TOKEN`                           | —        | Write access to the site repo. See below.       |
+| `GITHUB_REPO_OWNER` / `GITHUB_REPO_NAME` | —        | Where the page is committed.                    |
+| `GITHUB_BRANCH`                          | `main`   | Branch to commit to.                            |
+| `RENDER_API_KEY`                         | —        | Used to trigger the static site deploy.         |
+| `RENDER_STATIC_SITE_ID`                  | —        | The static site to deploy.                      |
+| `SITE_URL`                               | —        | Public URL, quoted in the Slack message.        |
+| `SLACK_WEBHOOK_URL`                      | —        | Optional. Unset logs the digest to the console. |
+| `DRY_RUN`                                | `false`  | Set `true` to skip the commit and the deploy.   |
+| `SITE_DEFAULT_SLUG`                      | —        | Slug of the profile the root page shows.        |
+| `SITE_DIR`                               | `site`   | Directory the pages are committed under.        |
+| `METADATA_TTL_SECONDS`                   | `604800` | How long a scraped description is cached.       |
+| `LINKS_LIMIT`                            | `100`    | Notion rows to read per run.                    |
 
 The webhook receiver reads its own set, plus `RENDER_API_KEY`:
 
