@@ -3,7 +3,7 @@
 `simplify_property` in the published pack handles title, rich_text, checkbox,
 select, status, multi_select, date, people, number, url, email, phone_number,
 created_time, and last_edited_time, and returns None for everything else. A link
-row's `People` relation therefore arrives as None, and every link row without
+row's `Profiles` relation therefore arrives as None, and every link row without
 `Everyone` checked renders on no page.
 
 This is the gap render-lab/render-tasks#28 fixed for TypeScript. Delete this module

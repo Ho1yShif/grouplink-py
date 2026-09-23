@@ -1,4 +1,4 @@
-"""The shim is what makes a link row's People relation reach the page model."""
+"""The shim is what makes a link row's Profiles relation reach the page model."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import grouplink.notion_relation  # noqa: F401  (imported for its side effect)
 
 
 def test_a_relation_property_simplifies_to_its_page_ids() -> None:
-    prop = {"type": "relation", "relation": [{"id": "person-shifra"}, {"id": "person-alex"}]}
-    assert notion_client.simplify_property(prop) == ["person-shifra", "person-alex"]
+    prop = {"type": "relation", "relation": [{"id": "profile-shifra"}, {"id": "profile-alex"}]}
+    assert notion_client.simplify_property(prop) == ["profile-shifra", "profile-alex"]
 
 
 def test_an_empty_relation_simplifies_to_an_empty_list() -> None:
@@ -27,7 +27,7 @@ def test_a_page_carries_the_relation_into_its_properties() -> None:
     raw = {
         "id": "p-1",
         "properties": {
-            "People": {"type": "relation", "relation": [{"id": "person-shifra"}]},
+            "Profiles": {"type": "relation", "relation": [{"id": "profile-shifra"}]},
         },
     }
-    assert notion_client.page(raw)["properties"]["People"] == ["person-shifra"]
+    assert notion_client.page(raw)["properties"]["Profiles"] == ["profile-shifra"]

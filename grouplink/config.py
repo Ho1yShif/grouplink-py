@@ -14,7 +14,7 @@ from typing import NotRequired, TypedDict
 
 class RebuildInput(TypedDict):
     databaseId: NotRequired[str]
-    peopleDatabaseId: NotRequired[str]
+    profilesDatabaseId: NotRequired[str]
     dryRun: NotRequired[bool]
     limit: NotRequired[int]
 
@@ -23,13 +23,13 @@ class RebuildInput(TypedDict):
 class RebuildConfig:
     #: Notion database holding the link rows.
     database_id: str
-    #: Notion database holding one row per person: Name, Slug, Tagline.
-    people_database_id: str
+    #: Notion database holding one row per profile: Name, Slug, Tagline.
+    profiles_database_id: str
     limit: int
     #: Skips the commit, the deploy, and the Slack post.
     dry_run: bool
 
-    #: Slug of the person the root page renders. Their page is written twice.
+    #: Slug of the profile the root page renders. Its page is written twice.
     default_slug: str
 
     #: Seconds a scraped metadata record stays in Key Value.
@@ -84,23 +84,25 @@ def load_config(
     if not database_id:
         raise ValueError("set NOTION_LINKS_DATABASE_ID, or pass databaseId in the run input")
 
-    people_database_id = run_input.get("peopleDatabaseId") or environ.get(
-        "NOTION_PEOPLE_DATABASE_ID", ""
+    profiles_database_id = run_input.get("profilesDatabaseId") or environ.get(
+        "NOTION_PROFILES_DATABASE_ID", ""
     )
-    if not people_database_id:
-        raise ValueError("set NOTION_PEOPLE_DATABASE_ID, or pass peopleDatabaseId in the run input")
+    if not profiles_database_id:
+        raise ValueError(
+            "set NOTION_PROFILES_DATABASE_ID, or pass profilesDatabaseId in the run input"
+        )
 
     # Required, because an unset value would silently publish a site with no root page.
     default_slug = environ.get("SITE_DEFAULT_SLUG", "").strip().lower()
     if not default_slug:
-        raise ValueError("set SITE_DEFAULT_SLUG to the slug of the person the root page shows")
+        raise ValueError("set SITE_DEFAULT_SLUG to the slug of the profile the root page shows")
 
     dry_run = run_input.get("dryRun")
     limit = run_input.get("limit")
 
     return RebuildConfig(
         database_id=database_id,
-        people_database_id=people_database_id,
+        profiles_database_id=profiles_database_id,
         limit=limit
         if limit is not None
         else env_int("LINKS_LIMIT", environ.get("LINKS_LIMIT"), 100),

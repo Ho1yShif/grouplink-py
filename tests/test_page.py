@@ -18,7 +18,7 @@ import pytest
 
 from grouplink.links import to_card
 from grouplink.page import LinkCard, PageModel, escape_html, render_page, safe_url
-from scripts.placeholder import PEOPLE, TAGLINE, SeedPerson
+from scripts.placeholder import PROFILES, TAGLINE, SeedProfile
 
 GOLDEN = Path(__file__).parent / "golden"
 
@@ -26,7 +26,7 @@ GOLDEN = Path(__file__).parent / "golden"
 #: not go stale on 1 January.
 GOLDEN_YEAR = 2026
 
-#: The fixture each seed person's page is committed as. The default person is
+#: The fixture each seed profile's page is committed as. The default profile is
 #: written twice, so index.html and shifra.html hold the same bytes.
 GOLDEN_FIXTURES = {"shifra": ["index.html", "shifra.html"], "graham": ["graham.html"]}
 
@@ -47,16 +47,16 @@ MODEL = PageModel(
 
 
 @pytest.mark.parametrize(
-    ("person", "fixture"),
-    [(person, fixture) for person in PEOPLE for fixture in GOLDEN_FIXTURES[person.slug]],
+    ("profile", "fixture"),
+    [(profile, fixture) for profile in PROFILES for fixture in GOLDEN_FIXTURES[profile.slug]],
     ids=lambda value: value if isinstance(value, str) else value.slug,
 )
-def test_reproduces_the_committed_page_byte_for_byte(person: SeedPerson, fixture: str) -> None:
+def test_reproduces_the_committed_page_byte_for_byte(profile: SeedProfile, fixture: str) -> None:
     html = render_page(
         PageModel(
-            name=person.name,
+            name=profile.name,
             tagline=TAGLINE,
-            cards=[to_card(link, link.description) for link in person.links],
+            cards=[to_card(link, link.description) for link in profile.links],
         ),
         year=GOLDEN_YEAR,
     )

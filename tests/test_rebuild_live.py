@@ -1,6 +1,6 @@
 """Live integration test. Opt-in only — gated behind RUN_LIVE=1 and real secrets.
 
-Requires NOTION_TOKEN, NOTION_LINKS_DATABASE_ID, NOTION_PEOPLE_DATABASE_ID,
+Requires NOTION_TOKEN, NOTION_LINKS_DATABASE_ID, NOTION_PROFILES_DATABASE_ID,
 SITE_DEFAULT_SLUG, and REDIS_URL. Runs in dry-run, so it reads Notion, scrapes,
 caches, and health-checks without committing or deploying anything.
 

@@ -1,4 +1,4 @@
-"""Render every person's page from the real Notion databases and write them into
+"""Render every profile's page from the real Notion databases and write them into
 site/, so a local static server serves the same HTML the workflow commits.
 
 Run with `uv run python -m scripts.preview`.
@@ -23,10 +23,10 @@ from grouplink.config import load_config
 from grouplink.links import (
     assert_default_slug,
     card_description,
-    group_by_person,
+    group_by_profile,
     to_card,
     to_link_rows,
-    to_person_rows,
+    to_profile_rows,
     unique_urls,
     visible_rows,
 )
@@ -39,15 +39,15 @@ async def main() -> None:
     ctx = local_ctx()
     cfg = load_config({"dryRun": True})
 
-    link_pages, people_pages = await asyncio.gather(
+    link_pages, profile_pages = await asyncio.gather(
         ctx.run(query_database, {"databaseId": cfg.database_id, "limit": cfg.limit}),
-        ctx.run(query_database, {"databaseId": cfg.people_database_id, "limit": cfg.limit}),
+        ctx.run(query_database, {"databaseId": cfg.profiles_database_id, "limit": cfg.limit}),
     )
 
-    people = to_person_rows(people_pages)
-    assert_default_slug(people, cfg.default_slug)
+    profiles = to_profile_rows(profile_pages)
+    assert_default_slug(profiles, cfg.default_slug)
 
-    pages = group_by_person(visible_rows(to_link_rows(link_pages)), people)
+    pages = group_by_profile(visible_rows(to_link_rows(link_pages)), profiles)
     card_urls = unique_urls([row for page in pages for row in page.rows])
 
     scraped = await map_in_batches(
@@ -60,12 +60,12 @@ async def main() -> None:
     for page in pages:
         write_pages(
             PageModel(
-                name=page.person.name,
-                tagline=page.person.tagline,
+                name=page.profile.name,
+                tagline=page.profile.tagline,
                 cards=[to_card(row, descriptions.get(row.url, "")) for row in page.rows],
             ),
             site_dir=cfg.site_dir,
-            slug=page.person.slug,
+            slug=page.profile.slug,
             default_slug=cfg.default_slug,
         )
 

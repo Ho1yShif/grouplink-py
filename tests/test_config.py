@@ -8,7 +8,7 @@ from grouplink.config import assert_writable, env_int, load_config
 
 ENV = {
     "NOTION_LINKS_DATABASE_ID": "db_links",
-    "NOTION_PEOPLE_DATABASE_ID": "db_people",
+    "NOTION_PROFILES_DATABASE_ID": "db_profiles",
     "SITE_DEFAULT_SLUG": "shifra",
 }
 
@@ -52,7 +52,7 @@ class TestLoadConfig:
     def test_names_the_variable_that_is_missing(self) -> None:
         with pytest.raises(ValueError, match="NOTION_LINKS_DATABASE_ID"):
             load_config({}, {})
-        with pytest.raises(ValueError, match="NOTION_PEOPLE_DATABASE_ID"):
+        with pytest.raises(ValueError, match="NOTION_PROFILES_DATABASE_ID"):
             load_config({}, {"NOTION_LINKS_DATABASE_ID": "x"})
         with pytest.raises(ValueError, match="SITE_DEFAULT_SLUG"):
             load_config({}, {**ENV, "SITE_DEFAULT_SLUG": ""})

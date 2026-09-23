@@ -8,14 +8,14 @@ from render_lab_tasks_notion.types import PageDTO
 from grouplink.links import (
     assert_default_slug,
     favicon_url,
-    group_by_person,
+    group_by_profile,
     meta_cache_key,
     page_path,
     page_paths_for,
     skipped_rows,
     to_icon_name,
     to_link_rows,
-    to_person_rows,
+    to_profile_rows,
     unique_urls,
     unknown_icons,
     visible_rows,
@@ -41,9 +41,9 @@ PAGES = [
     page({"URL": "", "Visible": True}, "No URL"),
 ]
 
-PEOPLE = [
-    page({"Slug": "shifra", "Tagline": "DevRel"}, "Shifra", id="person-shifra"),
-    page({"Slug": "Alex", "Tagline": ""}, "Alex", id="person-alex"),
+PROFILES = [
+    page({"Slug": "shifra", "Tagline": "DevRel"}, "Shifra", id="profile-shifra"),
+    page({"Slug": "Alex", "Tagline": ""}, "Alex", id="profile-alex"),
 ]
 
 
@@ -91,22 +91,22 @@ class TestUnknownIcons:
         assert unknown_icons(pages) == ["sparkle", "rocket"]
 
 
-class TestToPersonRows:
+class TestToProfileRows:
     def test_lowercases_the_slug(self) -> None:
-        assert [person.slug for person in to_person_rows(PEOPLE)] == ["shifra", "alex"]
+        assert [profile.slug for profile in to_profile_rows(PROFILES)] == ["shifra", "alex"]
 
     def test_skips_a_row_with_no_slug(self) -> None:
-        assert to_person_rows([page({"Tagline": "x"}, "Nameless")]) == []
+        assert to_profile_rows([page({"Tagline": "x"}, "Nameless")]) == []
 
 
-class TestGroupByPerson:
-    people = to_person_rows(PEOPLE)
+class TestGroupByProfile:
+    profiles = to_profile_rows(PROFILES)
     rows = to_link_rows(
         [
-            page({"URL": "https://shared.example", "People": ["person-shifra"]}, "Shifra only"),
+            page({"URL": "https://shared.example", "Profiles": ["profile-shifra"]}, "Shifra only"),
             page({"URL": "https://all.example", "Everyone": True}, "Everyone"),
             page(
-                {"URL": "https://both.example", "Everyone": True, "People": ["person-shifra"]},
+                {"URL": "https://both.example", "Everyone": True, "Profiles": ["profile-shifra"]},
                 "Everyone and related",
             ),
             page({"URL": "https://orphan.example"}, "Related to nobody"),
@@ -114,8 +114,8 @@ class TestGroupByPerson:
     )
 
     def titles_for(self, slug: str) -> list[str]:
-        grouped = group_by_person(self.rows, self.people)
-        return [row.title for p in grouped if p.person.slug == slug for row in p.rows]
+        grouped = group_by_profile(self.rows, self.profiles)
+        return [row.title for p in grouped if p.profile.slug == slug for row in p.rows]
 
     def test_puts_an_everyone_row_on_every_page(self) -> None:
         assert self.titles_for("alex") == ["Everyone", "Everyone and related"]
@@ -134,21 +134,21 @@ class TestGroupByPerson:
 
 class TestSkippedRows:
     def test_names_the_check_each_row_failed(self) -> None:
-        people = to_person_rows(PEOPLE)
+        profiles = to_profile_rows(PROFILES)
         pages = [
-            page({"URL": "https://ok.example", "People": ["person-shifra"]}, "Fine"),
-            page({"URL": "", "People": ["person-shifra"]}, "No URL"),
+            page({"URL": "https://ok.example", "Profiles": ["profile-shifra"]}, "Fine"),
+            page({"URL": "", "Profiles": ["profile-shifra"]}, "No URL"),
             page({"URL": "https://x.example"}, ""),
             page({"URL": "https://h.example", "Visible": False, "Everyone": True}, "Hidden"),
             page({"URL": "https://o.example"}, "Orphan"),
-            page({"URL": "https://g.example", "People": ["person-ghost"]}, "Ghost"),
+            page({"URL": "https://g.example", "Profiles": ["profile-ghost"]}, "Ghost"),
         ]
-        assert [(row.title, row.reason) for row in skipped_rows(pages, people)] == [
+        assert [(row.title, row.reason) for row in skipped_rows(pages, profiles)] == [
             ("No URL", "no URL"),
             ("https://x.example", "no Title"),
             ("Hidden", "Visible is unchecked"),
-            ("Orphan", "no People relation and Everyone is unchecked"),
-            ("Ghost", "its People relation points at no row in the People database"),
+            ("Orphan", "no Profiles relation and Everyone is unchecked"),
+            ("Ghost", "its Profiles relation points at no row in the Profiles database"),
         ]
 
 
@@ -172,13 +172,13 @@ class TestFaviconUrl:
         assert favicon_url("not a url") == ""
 
 
-def test_page_path_puts_the_default_person_at_the_root() -> None:
+def test_page_path_puts_the_default_profile_at_the_root() -> None:
     assert page_path("site", "") == "site/index.html"
     assert page_path("site", "alex") == "site/alex/index.html"
 
 
 class TestPagePathsFor:
-    def test_writes_the_default_person_twice(self) -> None:
+    def test_writes_the_default_profile_twice(self) -> None:
         assert page_paths_for("site", "shifra", "shifra") == [
             "site/shifra/index.html",
             "site/index.html",
@@ -189,12 +189,12 @@ class TestPagePathsFor:
 
 
 class TestAssertDefaultSlug:
-    def test_passes_when_a_person_has_the_slug(self) -> None:
-        assert_default_slug(to_person_rows(PEOPLE), "shifra")
+    def test_passes_when_a_profile_has_the_slug(self) -> None:
+        assert_default_slug(to_profile_rows(PROFILES), "shifra")
 
     def test_names_the_slug_that_matches_nobody(self) -> None:
         with pytest.raises(ValueError, match="SITE_DEFAULT_SLUG"):
-            assert_default_slug(to_person_rows(PEOPLE), "nobody")
+            assert_default_slug(to_profile_rows(PROFILES), "nobody")
 
 
 def test_meta_cache_key_is_versioned() -> None:

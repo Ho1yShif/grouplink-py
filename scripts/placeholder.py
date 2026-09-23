@@ -3,7 +3,7 @@ finds in production written out by hand.
 
 The workflow overwrites these files on its first real run. They exist so the static
 site has something to serve before then, and so the local preview has the same shape
-as production: one page per person, plus a copy of the default person's page at the
+as production: one page per profile, plus a copy of the default profile's page at the
 root. Run with `uv run python -m scripts.placeholder`.
 """
 
@@ -26,7 +26,7 @@ class SeedLink:
 
 
 @dataclass(frozen=True)
-class SeedPerson:
+class SeedProfile:
     name: str
     slug: str
     links: list[SeedLink]
@@ -53,8 +53,8 @@ SHARED = [
     ),
 ]
 
-PEOPLE = [
-    SeedPerson(
+PROFILES = [
+    SeedProfile(
         name="Shifra",
         slug="shifra",
         links=[
@@ -70,7 +70,7 @@ PEOPLE = [
             ),
         ],
     ),
-    SeedPerson(
+    SeedProfile(
         name="Graham",
         slug="graham",
         links=[
@@ -93,15 +93,15 @@ TAGLINE = "The fastest path to production for full-stack applications and agents
 
 
 def main() -> None:
-    for person in PEOPLE:
+    for profile in PROFILES:
         write_pages(
             PageModel(
-                name=person.name,
+                name=profile.name,
                 tagline=TAGLINE,
-                cards=[to_card(link, link.description) for link in person.links],
+                cards=[to_card(link, link.description) for link in profile.links],
             ),
             site_dir="site",
-            slug=person.slug,
+            slug=profile.slug,
             default_slug=DEFAULT_SLUG,
         )
 

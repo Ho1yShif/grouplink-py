@@ -1,4 +1,4 @@
-"""grouplink.rebuild — read the people and their links from Notion, enrich them,
+"""grouplink.rebuild — read the profiles and their links from Notion, enrich them,
 render one page each, commit the pages that changed, deploy, and say so in Slack.
 
 Every `await ctx.run(...)` below is a separate durable run on its own instance, with
@@ -34,18 +34,18 @@ from grouplink.batch import map_in_batches
 from grouplink.config import RebuildInput, assert_writable, load_config
 from grouplink.icons import DEFAULT_ICON
 from grouplink.links import (
-    PersonPage,
-    PersonRow,
+    ProfilePage,
+    ProfileRow,
     SkippedRow,
     assert_default_slug,
     card_description,
-    group_by_person,
+    group_by_profile,
     meta_cache_key,
     page_paths_for,
     skipped_rows,
     to_card,
     to_link_rows,
-    to_person_rows,
+    to_profile_rows,
     unique_urls,
     unknown_icons,
     visible_rows,
@@ -75,7 +75,7 @@ class SkippedRowDTO(TypedDict):
 
 
 class RebuildResult(TypedDict):
-    #: People rendered. The root page is a second copy, not another page.
+    #: Profiles rendered. The root page is a second copy, not another page.
     pageCount: int
     #: Distinct card URLs across every page.
     linkCount: int
@@ -111,18 +111,18 @@ async def rebuild(ctx: TaskContext, input: RebuildInput | None = None) -> Rebuil
 async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
     cfg = load_config(input)
 
-    # 1) Parallel fan-out: read both databases. A link's `People` relation holds the
-    #    Notion page ids of its People rows, which is how the two join.
-    link_pages, people_pages = await asyncio.gather(
+    # 1) Parallel fan-out: read both databases. A link's `Profiles` relation holds the
+    #    Notion page ids of its Profiles rows, which is how the two join.
+    link_pages, profile_pages = await asyncio.gather(
         ctx.run(query_database, {"databaseId": cfg.database_id, "limit": cfg.limit}),
-        ctx.run(query_database, {"databaseId": cfg.people_database_id, "limit": cfg.limit}),
+        ctx.run(query_database, {"databaseId": cfg.profiles_database_id, "limit": cfg.limit}),
     )
 
-    people = to_person_rows(people_pages)
-    assert_default_slug(people, cfg.default_slug)
-    pages = group_by_person(visible_rows(to_link_rows(link_pages)), people)
+    profiles = to_profile_rows(profile_pages)
+    assert_default_slug(profiles, cfg.default_slug)
+    pages = group_by_profile(visible_rows(to_link_rows(link_pages)), profiles)
 
-    skipped = _report_notion_problems(link_pages, people)
+    skipped = _report_notion_problems(link_pages, profiles)
 
     # A link on three pages is one URL to look up, scrape, and health-check.
     rows = [row for page in pages for row in page.rows]
@@ -174,12 +174,12 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
         if _unreachable(check)
     ]
 
-    # 6) Render one file per person, plus a second copy of the default person's page
+    # 6) Render one file per profile, plus a second copy of the default profile's page
     #    at the site root, so `/` and `/<default slug>` serve the same thing.
     files: list[SiteFile] = []
     for page in pages:
         content = render_page(_to_model(page, meta_by_url))
-        paths = page_paths_for(cfg.site_dir, page.person.slug, cfg.default_slug)
+        paths = page_paths_for(cfg.site_dir, page.profile.slug, cfg.default_slug)
         files.extend({"path": path, "content": content} for path in paths)
 
     result: RebuildResult = {
@@ -204,7 +204,7 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
     # 7) Chained run, then a batched fan-out: compare each page against what the
     #    branch already holds, so a quiet day produces no commit and no deploy.
     #    listTree comes first because getFileContents throws a 404 on a path that
-    #    doesn't exist yet, and a new person's page never does.
+    #    doesn't exist yet, and a new profile's page never does.
     repo = f"{cfg.repo_owner}/{cfg.repo_name}"
     tree = await ctx.run(list_tree, {"repo": repo, "ref": cfg.branch})
     on_branch = set(tree["paths"])
@@ -264,12 +264,14 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
     return result
 
 
-def _report_notion_problems(link_pages: list[PageDTO], people: list[PersonRow]) -> list[SkippedRow]:
-    """Logs what a person can see in Notion but the site does not show: a row that
+def _report_notion_problems(
+    link_pages: list[PageDTO], profiles: list[ProfileRow]
+) -> list[SkippedRow]:
+    """Logs what you can see in Notion but the site does not show: a row that
     reaches no page, and an Icon option no file matches. Both are otherwise silent.
     Returns the skipped rows, which the run reports as part of its result.
     """
-    skipped = skipped_rows(link_pages, people)
+    skipped = skipped_rows(link_pages, profiles)
     for row in skipped:
         log.info('skipped "%s": %s', row.title, row.reason)
     for name in unknown_icons(link_pages):
@@ -308,10 +310,10 @@ def _to_skipped_dto(row: SkippedRow) -> SkippedRowDTO:
     return {"title": row.title, "url": row.url, "reason": row.reason}
 
 
-def _to_model(page: PersonPage, meta_by_url: dict[str, CachedMeta]) -> PageModel:
+def _to_model(page: ProfilePage, meta_by_url: dict[str, CachedMeta]) -> PageModel:
     return PageModel(
-        name=page.person.name,
-        tagline=page.person.tagline,
+        name=page.profile.name,
+        tagline=page.profile.tagline,
         cards=[
             to_card(row, meta_by_url.get(row.url, EMPTY_META)["description"]) for row in page.rows
         ],

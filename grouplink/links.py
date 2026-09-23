@@ -18,10 +18,10 @@ class LinkRow:
     title: str
     url: str
     visible: bool
-    #: Renders on every person's page, whatever `person_ids` holds.
+    #: Renders on every profile's page, whatever `profile_ids` holds.
     everyone: bool
-    #: Notion page ids of the People rows this link belongs to.
-    person_ids: list[str]
+    #: Notion page ids of the Profiles rows this link belongs to.
+    profile_ids: list[str]
     #: Which file under site/assets/link-icons the card draws.
     icon: IconName
 
@@ -40,8 +40,8 @@ class CardSource(Protocol):
 
 
 @dataclass(frozen=True)
-class PersonRow:
-    """One row of the People database. `id` is what a link's relation points at."""
+class ProfileRow:
+    """One row of the Profiles database. `id` is what a link's relation points at."""
 
     id: str
     name: str
@@ -50,10 +50,10 @@ class PersonRow:
 
 
 @dataclass(frozen=True)
-class PersonPage:
-    """A person and the links that relate to them, in the order Notion returned them."""
+class ProfilePage:
+    """A profile and the links that relate to it, in the order Notion returned them."""
 
-    person: PersonRow
+    profile: ProfileRow
     rows: list[LinkRow]
 
 
@@ -81,7 +81,7 @@ def to_icon_name(value: PropertyValue | None) -> IconName:
     return name if is_icon_name(name) else DEFAULT_ICON
 
 
-def _person_ids(value: PropertyValue | None) -> list[str]:
+def _profile_ids(value: PropertyValue | None) -> list[str]:
     return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
 
 
@@ -101,7 +101,7 @@ def read_link_row(page: PageDTO) -> LinkRow:
         url=_read_string(props.get("URL")),
         visible=props.get("Visible") is not False,
         everyone=props.get("Everyone") is True,
-        person_ids=_person_ids(props.get("People")),
+        profile_ids=_profile_ids(props.get("Profiles")),
         icon=to_icon_name(props.get("Icon")),
     )
 
@@ -120,20 +120,20 @@ def _skip_reason(row: LinkRow, known_ids: frozenset[str]) -> str:
         return "no Title"
     if not row.visible:
         return "Visible is unchecked"
-    if row.everyone or any(person_id in known_ids for person_id in row.person_ids):
+    if row.everyone or any(profile_id in known_ids for profile_id in row.profile_ids):
         return ""
-    if not row.person_ids:
-        return "no People relation and Everyone is unchecked"
-    return "its People relation points at no row in the People database"
+    if not row.profile_ids:
+        return "no Profiles relation and Everyone is unchecked"
+    return "its Profiles relation points at no row in the Profiles database"
 
 
-def skipped_rows(pages: list[PageDTO], people: list[PersonRow]) -> list[SkippedRow]:
+def skipped_rows(pages: list[PageDTO], profiles: list[ProfileRow]) -> list[SkippedRow]:
     """Why a row you can see in Notion is missing from the site.
 
     Reads every page, so it can name the rows `to_link_rows` drops as well as the ones
     no page claims.
     """
-    known_ids = frozenset(person.id for person in people)
+    known_ids = frozenset(profile.id for profile in profiles)
     skipped: list[SkippedRow] = []
 
     for page in pages:
@@ -156,13 +156,13 @@ def unknown_icons(pages: list[PageDTO]) -> list[str]:
     return list(dict.fromkeys(name for name in raw if name and not is_icon_name(name)))
 
 
-def to_person_rows(pages: list[PageDTO]) -> list[PersonRow]:
-    """People rows.
+def to_profile_rows(pages: list[PageDTO]) -> list[ProfileRow]:
+    """Profile rows.
 
     A row without a name or a slug is skipped, because neither the page heading nor
     its path can be built without both.
     """
-    rows: list[PersonRow] = []
+    rows: list[ProfileRow] = []
 
     for page in pages:
         props = page["properties"]
@@ -172,7 +172,7 @@ def to_person_rows(pages: list[PageDTO]) -> list[PersonRow]:
             continue
 
         rows.append(
-            PersonRow(
+            ProfileRow(
                 id=page["id"], name=name, slug=slug, tagline=_read_string(props.get("Tagline"))
             )
         )
@@ -180,19 +180,19 @@ def to_person_rows(pages: list[PageDTO]) -> list[PersonRow]:
     return rows
 
 
-def group_by_person(rows: list[LinkRow], people: list[PersonRow]) -> list[PersonPage]:
-    """One bundle per person.
+def group_by_profile(rows: list[LinkRow], profiles: list[ProfileRow]) -> list[ProfilePage]:
+    """One bundle per profile.
 
-    A link related to two people appears in both, and one with `everyone` set appears
+    A link related to two profiles appears in both, and one with `everyone` set appears
     on every page. The two are a union, so a row with both set is redundant rather
     than contradictory.
     """
     return [
-        PersonPage(
-            person=person,
-            rows=[row for row in rows if row.everyone or person.id in row.person_ids],
+        ProfilePage(
+            profile=profile,
+            rows=[row for row in rows if row.everyone or profile.id in row.profile_ids],
         )
-        for person in people
+        for profile in profiles
     ]
 
 
@@ -202,14 +202,14 @@ def unique_urls(rows: list[LinkRow]) -> list[str]:
 
 
 def page_path(site_dir: str, slug: str) -> str:
-    """The default person is the root page; everyone else lives under their slug."""
+    """The default profile is the root page; every other profile lives under its slug."""
     return f"{site_dir}/{slug}/index.html" if slug else f"{site_dir}/index.html"
 
 
 def page_paths_for(site_dir: str, slug: str, default_slug: str) -> list[str]:
-    """Every path one person's page is written to.
+    """Every path one profile's page is written to.
 
-    The default person gets a second copy at the site root, so `/` and
+    The default profile gets a second copy at the site root, so `/` and
     `/<default slug>` serve the same bytes.
     """
     paths = [page_path(site_dir, slug)]
@@ -218,15 +218,15 @@ def page_paths_for(site_dir: str, slug: str, default_slug: str) -> list[str]:
     return paths
 
 
-def assert_default_slug(people: list[PersonRow], default_slug: str) -> None:
-    """Raise unless one of the people carries the default slug.
+def assert_default_slug(profiles: list[ProfileRow], default_slug: str) -> None:
+    """Raise unless one of the profiles carries the default slug.
 
-    A slug that matches nobody would publish a site with no root page, so every
+    A slug that matches no profile would publish a site with no root page, so every
     caller that renders pages checks it before it renders anything.
     """
-    if not any(person.slug == default_slug for person in people):
+    if not any(profile.slug == default_slug for profile in profiles):
         raise ValueError(
-            f'SITE_DEFAULT_SLUG is "{default_slug}", which matches no Slug in the People database'
+            f'SITE_DEFAULT_SLUG is "{default_slug}", which matches no Slug in the Profiles database'
         )
 
 

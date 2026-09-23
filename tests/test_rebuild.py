@@ -46,7 +46,7 @@ from grouplink.rebuild import rebuild
 
 ENV = {
     "NOTION_LINKS_DATABASE_ID": "db_links",
-    "NOTION_PEOPLE_DATABASE_ID": "db_people",
+    "NOTION_PROFILES_DATABASE_ID": "db_profiles",
     "SITE_DEFAULT_SLUG": "shifra",
     "GITHUB_REPO_OWNER": "acme",
     "GITHUB_REPO_NAME": "grouplink",
@@ -59,8 +59,8 @@ ENV = {
     "DRY_RUN": "false",
 }
 
-SHIFRA = "person-shifra"
-ALEX = "person-alex"
+SHIFRA = "profile-shifra"
+ALEX = "profile-alex"
 
 
 def title_prop(text: str) -> dict[str, Any]:
@@ -72,7 +72,7 @@ def raw_page(
     url: str,
     n: int,
     visible: bool = True,
-    people: list[str] | None = None,
+    profiles: list[str] | None = None,
     everyone: bool = False,
 ) -> dict[str, Any]:
     """`n` only makes the Notion page id unique."""
@@ -86,15 +86,15 @@ def raw_page(
             "URL": {"type": "url", "url": url},
             "Visible": {"type": "checkbox", "checkbox": visible},
             "Everyone": {"type": "checkbox", "checkbox": everyone},
-            "People": {
+            "Profiles": {
                 "type": "relation",
-                "relation": [{"id": id} for id in ([SHIFRA] if people is None else people)],
+                "relation": [{"id": id} for id in ([SHIFRA] if profiles is None else profiles)],
             },
         },
     }
 
 
-def raw_person(id: str, name: str, slug: str, tagline: str) -> dict[str, Any]:
+def raw_profile(id: str, name: str, slug: str, tagline: str) -> dict[str, Any]:
     return {
         "id": id,
         "url": f"https://www.notion.so/{id}",
@@ -109,16 +109,16 @@ def raw_person(id: str, name: str, slug: str, tagline: str) -> dict[str, Any]:
 
 
 LINK_PAGES = [
-    # Shared by both people, so it must be scraped and checked exactly once.
-    raw_page("Discord", "https://discord.com/invite/x", 1, people=[SHIFRA, ALEX]),
+    # Shared by both profiles, so it must be scraped and checked exactly once.
+    raw_page("Discord", "https://discord.com/invite/x", 1, profiles=[SHIFRA, ALEX]),
     raw_page("Startups", "https://render.com/startups", 2),
     raw_page("Hidden", "https://render.com/secret", 3, visible=False),
-    raw_page("Alex only", "https://example.com/alex", 4, people=[ALEX]),
+    raw_page("Alex only", "https://example.com/alex", 4, profiles=[ALEX]),
 ]
 
-PEOPLE_PAGES = [
-    raw_person(SHIFRA, "Shifra Williams", "shifra", "Developer relations at Render."),
-    raw_person(ALEX, "Alex Rivera", "alex", "Engineer at Render."),
+PROFILE_PAGES = [
+    raw_profile(SHIFRA, "Shifra Williams", "shifra", "Developer relations at Render."),
+    raw_profile(ALEX, "Alex Rivera", "alex", "Engineer at Render."),
 ]
 
 
@@ -195,8 +195,8 @@ class Harness:
         if path.startswith("/v1/data_sources/") and path.endswith("/query"):
             source = path.split("/")[3]
             rows = (
-                PEOPLE_PAGES
-                if source == "ds-db_people"
+                PROFILE_PAGES
+                if source == "ds-db_profiles"
                 else (self.fakes.links if self.fakes.links is not None else LINK_PAGES)
             )
             return httpx.Response(
@@ -375,7 +375,7 @@ class TestRebuild:
         assert "Hidden" not in html
         assert "render.com/secret" not in html
 
-    async def test_puts_a_persons_links_in_their_own_file_and_nobody_elses(self, env: Any) -> None:
+    async def test_puts_a_profiles_links_in_its_own_file_and_nobody_elses(self, env: Any) -> None:
         h = harness()
         await rebuild.func(h.ctx, {})
         files = h.committed()
@@ -392,7 +392,7 @@ class TestRebuild:
         h = harness(
             links=[
                 *LINK_PAGES,
-                raw_page("Careers", "https://render.com/careers", 5, people=[], everyone=True),
+                raw_page("Careers", "https://render.com/careers", 5, profiles=[], everyone=True),
             ]
         )
         await rebuild.func(h.ctx, {})
@@ -405,7 +405,7 @@ class TestRebuild:
         h = harness(
             links=[
                 *LINK_PAGES,
-                raw_page("Careers", "https://render.com/careers", 5, people=[], everyone=True),
+                raw_page("Careers", "https://render.com/careers", 5, profiles=[], everyone=True),
             ]
         )
         await rebuild.func(h.ctx, {})
@@ -425,7 +425,7 @@ class TestRebuild:
         h = harness(
             links=[
                 *LINK_PAGES,
-                raw_page("Orphan", "https://example.com/orphan", 20, people=[]),
+                raw_page("Orphan", "https://example.com/orphan", 20, profiles=[]),
                 raw_page("No URL", "", 21),
             ]
         )
@@ -433,10 +433,10 @@ class TestRebuild:
 
         reasons = {row["title"]: row["reason"] for row in result["skipped"]}
         assert reasons["Hidden"] == "Visible is unchecked"
-        assert reasons["Orphan"] == "no People relation and Everyone is unchecked"
+        assert reasons["Orphan"] == "no Profiles relation and Everyone is unchecked"
         assert reasons["No URL"] == "no URL"
 
-    async def test_serves_the_default_person_at_the_root_byte_for_byte(self, env: Any) -> None:
+    async def test_serves_the_default_profile_at_the_root_byte_for_byte(self, env: Any) -> None:
         h = harness()
         await rebuild.func(h.ctx, {})
         files = h.committed()
@@ -561,7 +561,7 @@ class TestRebuild:
         assert second.commits == []
         assert second.deploys == []
 
-    async def test_commits_a_brand_new_persons_page(self, env: Any) -> None:
+    async def test_commits_a_brand_new_profiles_page(self, env: Any) -> None:
         first = harness()
         await rebuild.func(first.ctx, {})
         rendered = first.committed()

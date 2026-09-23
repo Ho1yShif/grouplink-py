@@ -1,4 +1,4 @@
-"""Shared by scripts/placeholder.py and scripts/preview.py: render one person's
+"""Shared by scripts/placeholder.py and scripts/preview.py: render one profile's
 page and write it everywhere it belongs under site/.
 """
 
@@ -13,8 +13,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def write_pages(model: PageModel, *, site_dir: str, slug: str, default_slug: str) -> None:
-    """Writes the page to the person's own path, plus the site root when they are the
-    default person. Paths are relative to the repo root, as the workflow commits them.
+    """Writes the page to the profile's own path, plus the site root when it is the
+    default profile. Paths are relative to the repo root, as the workflow commits them.
     """
     html = render_page(model)
     for path in page_paths_for(site_dir, slug, default_slug):

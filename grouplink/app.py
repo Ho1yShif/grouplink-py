@@ -7,7 +7,7 @@ combines them. Miss a pack here and `ctx.run` on one of its tasks fails to resol
 at runtime rather than at import.
 
 The Notion relation shim is installed here, before any pack code reads a property,
-because `grouplink.rebuild` cannot join links to people without it.
+because `grouplink.rebuild` cannot join links to profiles without it.
 """
 
 from __future__ import annotations
