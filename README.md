@@ -215,9 +215,12 @@ a fast-forward ref update, so a rule on `GITHUB_BRANCH` requiring a pull request
 or a passing status check turns it down. Exempt the token, or point
 `GITHUB_BRANCH` at an unprotected branch.
 
-An expired or revoked token fails the run at `github.commitFiles`, and that error
-goes to Slack. No other step needs GitHub, so the only other symptom is a page
-that stops updating.
+A token problem fails the run at `github.commitFiles`, and that error goes to
+Slack. No other step needs GitHub, so the only other symptom is a page that stops
+updating. The status code names the cause: 401 for an expired or revoked token,
+403 `Resource not accessible by personal access token` for a live token without
+write access to the contents. On a public repo the tree and page reads earlier in
+the run return 200 either way, so they say nothing about the token.
 
 The token belongs on the Workflow service. `grouplink-webhook` never calls
 GitHub, so don't set it there.
