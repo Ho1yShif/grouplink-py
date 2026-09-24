@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from render_lab_tasks_notion.types import PageDTO, PropertyValue
 
 from grouplink.icons import DEFAULT_ICON, IconName, is_icon_name
+from grouplink.jsurl import is_http_url, is_mailto_url
 from grouplink.jsurl import parse as parse_url
 from grouplink.page import LinkCard
 
@@ -106,16 +107,28 @@ def read_link_row(page: PageDTO) -> LinkRow:
     )
 
 
+def is_renderable_url(url: str) -> bool:
+    """Whether a card may point at this URL.
+
+    An http(s) link is scraped and health-checked; a mailto: link is neither, and
+    still renders. Anything else would reach httpx as a string it refuses, which
+    fails the whole rebuild rather than the one row.
+    """
+    return is_http_url(url) or is_mailto_url(url)
+
+
 def to_link_rows(pages: list[PageDTO]) -> list[LinkRow]:
-    """Every row that has both a title and a URL, in the order Notion returned them."""
+    """Every row with a title and a URL the site can link to, in Notion's order."""
     rows = [read_link_row(page) for page in pages]
-    return [row for row in rows if row.url and row.title]
+    return [row for row in rows if is_renderable_url(row.url) and row.title]
 
 
 def _skip_reason(row: LinkRow, known_ids: frozenset[str]) -> str:
     """Why this row renders nowhere, or "" when it renders. Checks run in read order."""
     if not row.url:
         return "no URL"
+    if not is_renderable_url(row.url):
+        return "URL is neither http://, https://, nor mailto:"
     if not row.title:
         return "no Title"
     if not row.visible:
@@ -199,6 +212,11 @@ def group_by_profile(rows: list[LinkRow], profiles: list[ProfileRow]) -> list[Pr
 def unique_urls(rows: list[LinkRow]) -> list[str]:
     """Distinct URLs, first-seen order. A link on three pages is fetched once."""
     return list(dict.fromkeys(row.url for row in rows))
+
+
+def fetchable_urls(urls: list[str]) -> list[str]:
+    """The URLs worth scraping and health-checking. A mailto: link has no page."""
+    return [url for url in urls if is_http_url(url)]
 
 
 def page_path(site_dir: str, slug: str) -> str:

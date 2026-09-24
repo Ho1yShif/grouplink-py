@@ -8,6 +8,7 @@ from render_lab_tasks_notion.types import PageDTO
 from grouplink.links import (
     assert_default_slug,
     favicon_url,
+    fetchable_urls,
     group_by_profile,
     meta_cache_key,
     page_path,
@@ -53,6 +54,20 @@ class TestToLinkRows:
 
     def test_skips_rows_with_no_url(self) -> None:
         assert "No URL" not in [row.title for row in to_link_rows(PAGES)]
+
+    @pytest.mark.parametrize(
+        "url",
+        ["render.com/careers", "ftp://example.com", "mailto:", "javascript:alert(1)"],
+    )
+    def test_skips_a_url_the_site_cannot_link_to(self, url: str) -> None:
+        assert to_link_rows([page({"URL": url}, "Bad")]) == []
+
+    @pytest.mark.parametrize(
+        "url",
+        ["https://render.com", "http://render.com", "mailto:shifra@render.com"],
+    )
+    def test_keeps_an_http_or_mailto_url(self, url: str) -> None:
+        assert [row.url for row in to_link_rows([page({"URL": url}, "Good")])] == [url]
 
     def test_keeps_the_notion_order_and_drops_hidden_rows(self) -> None:
         assert [row.title for row in visible_rows(to_link_rows(PAGES))] == ["B", "A", "X"]
@@ -142,6 +157,9 @@ class TestSkippedRows:
             page({"URL": "https://h.example", "Visible": False, "Everyone": True}, "Hidden"),
             page({"URL": "https://o.example"}, "Orphan"),
             page({"URL": "https://g.example", "Profiles": ["profile-ghost"]}, "Ghost"),
+            page({"URL": "render.com/careers", "Profiles": ["profile-shifra"]}, "Schemeless"),
+            page({"URL": "ftp://example.com", "Profiles": ["profile-shifra"]}, "FTP"),
+            page({"URL": "mailto:shifra@render.com", "Profiles": ["profile-shifra"]}, "Email"),
         ]
         assert [(row.title, row.reason) for row in skipped_rows(pages, profiles)] == [
             ("No URL", "no URL"),
@@ -149,6 +167,8 @@ class TestSkippedRows:
             ("Hidden", "Visible is unchecked"),
             ("Orphan", "no Profiles relation and Everyone is unchecked"),
             ("Ghost", "its Profiles relation points at no row in the Profiles database"),
+            ("Schemeless", "URL is neither http://, https://, nor mailto:"),
+            ("FTP", "URL is neither http://, https://, nor mailto:"),
         ]
 
 
@@ -164,12 +184,21 @@ class TestUniqueUrls:
         assert unique_urls(rows) == ["https://b.example", "https://a.example"]
 
 
+class TestFetchableUrls:
+    def test_keeps_only_the_urls_with_a_page_to_fetch(self) -> None:
+        urls = ["https://render.com", "mailto:shifra@render.com", "http://render.com"]
+        assert fetchable_urls(urls) == ["https://render.com", "http://render.com"]
+
+
 class TestFaviconUrl:
     def test_points_at_the_origin_root(self) -> None:
         assert favicon_url("https://render.com/tutorials/x") == "https://render.com/favicon.ico"
 
     def test_returns_empty_for_a_url_that_will_not_parse(self) -> None:
         assert favicon_url("not a url") == ""
+
+    def test_returns_empty_for_a_mailto_link(self) -> None:
+        assert favicon_url("mailto:shifra@render.com") == ""
 
 
 def test_page_path_puts_the_default_profile_at_the_root() -> None:

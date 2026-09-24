@@ -427,6 +427,8 @@ class TestRebuild:
                 *LINK_PAGES,
                 raw_page("Orphan", "https://example.com/orphan", 20, profiles=[]),
                 raw_page("No URL", "", 21),
+                raw_page("Schemeless", "render.com/careers", 22),
+                raw_page("FTP", "ftp://example.com", 23),
             ]
         )
         result = await rebuild.func(h.ctx, {})
@@ -435,6 +437,32 @@ class TestRebuild:
         assert reasons["Hidden"] == "Visible is unchecked"
         assert reasons["Orphan"] == "no Profiles relation and Everyone is unchecked"
         assert reasons["No URL"] == "no URL"
+        assert reasons["Schemeless"] == "URL is neither http://, https://, nor mailto:"
+        assert reasons["FTP"] == "URL is neither http://, https://, nor mailto:"
+
+    async def test_never_fetches_a_url_with_no_scheme(self, env: Any) -> None:
+        """httpx refuses a URL with no scheme, so before this check one bad Notion row
+        failed the whole run and the site kept serving the previous commit.
+        """
+        h = harness(links=[*LINK_PAGES, raw_page("Schemeless", "render.com/careers", 22)])
+        await rebuild.func(h.ctx, {})
+
+        assert "render.com/careers" not in h.scraped
+        assert "render.com/careers" not in h.checked
+        assert "Schemeless" not in h.committed_html()
+
+    async def test_renders_a_mailto_row_without_scraping_or_checking_it(self, env: Any) -> None:
+        address = "mailto:shifra@render.com"
+        h = harness(links=[*LINK_PAGES, raw_page("Email me", address, 24)])
+        result = await rebuild.func(h.ctx, {})
+
+        assert address not in h.scraped
+        assert address not in h.checked
+        assert [row["title"] for row in result["skipped"]] == ["Hidden"]
+
+        html = h.committed().get("site/shifra/index.html", "")
+        assert f'href="{address}"' in html
+        assert f'<span class="card__target">{address}</span>' in html
 
     async def test_serves_the_default_profile_at_the_root_byte_for_byte(self, env: Any) -> None:
         h = harness()

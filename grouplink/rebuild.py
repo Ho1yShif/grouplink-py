@@ -39,6 +39,7 @@ from grouplink.links import (
     SkippedRow,
     assert_default_slug,
     card_description,
+    fetchable_urls,
     group_by_profile,
     meta_cache_key,
     page_paths_for,
@@ -124,22 +125,25 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
 
     skipped = _report_notion_problems(link_pages, profiles)
 
-    # A link on three pages is one URL to look up, scrape, and health-check.
+    # A link on three pages is one URL to look up, scrape, and health-check. A
+    # mailto: card renders from its Notion row alone, so it is a card URL but not a
+    # web URL and skips stages 2 through 5.
     rows = [row for page in pages for row in page.rows]
     card_urls = unique_urls(rows)
+    web_urls = fetchable_urls(card_urls)
 
     # 2) Batched fan-out: look for each card's metadata in Key Value first.
     meta_by_url: dict[str, CachedMeta] = {}
     cached = await map_in_batches(
-        card_urls, lambda url, _i: ctx.run(kv_get, {"key": meta_cache_key(url)})
+        web_urls, lambda url, _i: ctx.run(kv_get, {"key": meta_cache_key(url)})
     )
-    for url, entry in zip(card_urls, cached, strict=True):
+    for url, entry in zip(web_urls, cached, strict=True):
         hit = _read_cached(entry.get("value"))
         if hit is not None:
             meta_by_url[url] = hit
 
     # 3) Batched fan-out: scrape only the misses.
-    miss_urls = [url for url in card_urls if url not in meta_by_url]
+    miss_urls = [url for url in web_urls if url not in meta_by_url]
     scraped = await map_in_batches(
         miss_urls, lambda url, _i: ctx.run(extract_metadata, {"url": url})
     )
@@ -166,11 +170,11 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
     # 5) Batched fan-out: health-check every link. tasks-http has no HEAD method, so
     #    this is a GET whose body we discard.
     checks = await map_in_batches(
-        card_urls, lambda url, _i: ctx.run(request, {"method": "GET", "url": url})
+        web_urls, lambda url, _i: ctx.run(request, {"method": "GET", "url": url})
     )
     dead_links = [
         f"{url} ({check['status'] if check else 'no response'})"
-        for url, check in zip(card_urls, checks, strict=True)
+        for url, check in zip(web_urls, checks, strict=True)
         if _unreachable(check)
     ]
 
@@ -185,7 +189,7 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
     result: RebuildResult = {
         "pageCount": len(pages),
         "linkCount": len(card_urls),
-        "cacheHits": len(card_urls) - len(miss_urls),
+        "cacheHits": len(web_urls) - len(miss_urls),
         "skipped": [_to_skipped_dto(row) for row in skipped],
         "deadLinks": dead_links,
         "committed": False,

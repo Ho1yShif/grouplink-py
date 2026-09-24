@@ -108,7 +108,7 @@ There are two. Links:
 | Property   | Type     | Purpose                                                                        |
 | ---------- | -------- | ------------------------------------------------------------------------------ |
 | `Title`    | title    | Card text. Not scraped — this is the copy you control.                         |
-| `URL`      | url      | Where the card points.                                                         |
+| `URL`      | url      | Where the card points. `http://`, `https://`, or `mailto:`; other rows skip.   |
 | `Visible`  | checkbox | Unchecked rows are dropped.                                                    |
 | `Everyone` | checkbox | Checked puts the link on every profile's page.                                 |
 | `Profiles` | relation | Which pages the link appears on. Relate it to two rows and it appears on both. |
