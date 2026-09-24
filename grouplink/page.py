@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from grouplink.icons import ICON_NAMES, IconName
+from grouplink.jsurl import is_mailto_url, normalize_mailto
 from grouplink.jsurl import parse as parse_url
 
 
@@ -72,11 +73,13 @@ def escape_html(value: str) -> str:
 
 
 def safe_url(value: str) -> str:
-    """Allow only http(s) hrefs into the document.
+    """Allow only http(s) and mailto: hrefs into the document.
 
     Anything else — javascript:, data:, a malformed string from Notion —
     collapses to "#".
     """
+    if is_mailto_url(value):
+        return normalize_mailto(value)
     parsed = parse_url(value)
     if parsed is None or parsed.scheme not in ("http", "https"):
         return "#"
@@ -418,7 +421,13 @@ MAX_TARGET = 44
 
 
 def _display_target(url: str) -> str:
-    """Empty when the URL will not parse."""
+    """Empty when the URL will not parse.
+
+    A mailto: link shows the whole href, recipients and all, because it has no host
+    or path to shorten to.
+    """
+    if is_mailto_url(url):
+        return _truncate(normalize_mailto(url))
     parsed = parse_url(url)
     if parsed is None:
         return ""
@@ -426,7 +435,10 @@ def _display_target(url: str) -> str:
     hostname = parsed.hostname
     if hostname.startswith("www."):
         hostname = hostname[len("www.") :]
-    target = hostname + path
+    return _truncate(hostname + path)
+
+
+def _truncate(target: str) -> str:
     if len(target) > MAX_TARGET:
         return target[: MAX_TARGET - 1] + "\u2026"
     return target

@@ -98,6 +98,13 @@ class TestRenderPage:
         assert "javascript:" not in html
         assert 'href="#"' in html
 
+    def test_renders_a_mailto_card_with_the_address_as_its_target(self) -> None:
+        card = LinkCard("Email", "mailto:shifra@render.com", "", icon_url="", icon="email")
+        html = render_page(replace(MODEL, cards=[card]))
+        assert 'href="mailto:shifra@render.com"' in html
+        assert '<span class="card__target">mailto:shifra@render.com</span>' in html
+        assert 'class="card__icon"' not in html
+
     def test_keeps_the_tagline_out_of_the_page_and_on_one_line(self) -> None:
         html = render_page(replace(MODEL, tagline="First half\nsecond half"))
         assert 'class="tagline"' not in html
@@ -160,6 +167,12 @@ class TestEscapeHtmlAndSafeUrl:
         assert safe_url("https://render.com/") == "https://render.com/"
         assert safe_url("data:text/html,x") == "#"
         assert safe_url("not a url") == "#"
+
+    def test_passes_a_mailto_link_through(self) -> None:
+        assert safe_url("mailto:shifra@render.com") == "mailto:shifra@render.com"
+        assert safe_url("MAILTO:Shifra@Render.com") == "mailto:Shifra@Render.com"
+        assert safe_url("mailto:a@b.com,c@d.com") == "mailto:a@b.com,c@d.com"
+        assert safe_url("mailto:") == "#"
 
     def test_normalizes_the_way_the_js_url_constructor_does(self) -> None:
         assert safe_url("https://render.com") == "https://render.com/"
