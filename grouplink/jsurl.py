@@ -7,8 +7,12 @@ percent-encoded. `urllib.parse` does none of that, so a port of those two functi
 built on `urllib.parse` would commit a different `site/index.html` on the first run.
 
 Only the special schemes are parsed. Everything else returns None, which is what
-both callers want: `safe_url` collapses a non-http(s) string to "#", and
+both callers want: `safe_url` collapses an unsupported string to "#", and
 `favicon_url` returns "" for a base the JS constructor would have thrown on.
+
+The scheme predicates at the bottom answer which URLs the site accepts at all.
+`mailto:` is not a special scheme, so `parse` returns None for one; the callers
+that allow it test it with `is_mailto_url` first.
 """
 
 from __future__ import annotations
@@ -101,9 +105,34 @@ class ParsedUrl:
         return out
 
 
+_MAILTO = "mailto:"
+
+
+def _clean(value: str) -> str:
+    """The characters the JS URL constructor drops before it parses anything."""
+    return value.strip(_C0_AND_SPACE).translate(_TAB_AND_NEWLINE)
+
+
+def is_http_url(value: str) -> bool:
+    """True only for an http:// or https:// URL."""
+    return _clean(value).lower().startswith(("http://", "https://"))
+
+
+def is_mailto_url(value: str) -> bool:
+    """True for a mailto: URL with at least one recipient."""
+    cleaned = _clean(value)
+    return cleaned.lower().startswith(_MAILTO) and len(cleaned) > len(_MAILTO)
+
+
+def normalize_mailto(value: str) -> str:
+    """A mailto: URL with its scheme lowercased, the way the JS constructor writes it."""
+    cleaned = _clean(value)
+    return _MAILTO + cleaned[len(_MAILTO) :]
+
+
 def parse(value: str) -> ParsedUrl | None:
     """Parse an absolute URL with a special scheme, or return None."""
-    raw = value.strip(_C0_AND_SPACE).translate(_TAB_AND_NEWLINE)
+    raw = _clean(value)
 
     scheme, colon, rest = raw.partition(":")
     if not colon or not scheme:
