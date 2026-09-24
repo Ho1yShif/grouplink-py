@@ -423,11 +423,14 @@ MAX_TARGET = 44
 def _display_target(url: str) -> str:
     """Empty when the URL will not parse.
 
-    A mailto: link shows the whole href, recipients and all, because it has no host
-    or path to shorten to.
+    A mailto: link shows its recipients and stops. Any headers after the `?` stay in
+    the href but not on the line. A link with headers and no recipient shows `mailto`.
     """
     if is_mailto_url(url):
-        return _truncate(normalize_mailto(url))
+        recipients = normalize_mailto(url).split("?", 1)[0]
+        if recipients == "mailto:":
+            return "mailto"
+        return _truncate(recipients)
     parsed = parse_url(url)
     if parsed is None:
         return ""

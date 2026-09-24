@@ -105,6 +105,18 @@ class TestRenderPage:
         assert '<span class="card__target">mailto:shifra@render.com</span>' in html
         assert 'class="card__icon"' not in html
 
+    def test_keeps_mailto_headers_in_the_href_but_off_the_target_line(self) -> None:
+        url = "mailto:shifra@render.com?subject=Hi&body=Hello"
+        card = LinkCard("Email", url, "", icon_url="", icon="email")
+        html = render_page(replace(MODEL, cards=[card]))
+        assert f'href="{escape_html(url)}"' in html
+        assert '<span class="card__target">mailto:shifra@render.com</span>' in html
+
+    def test_labels_a_mailto_link_with_no_recipient(self) -> None:
+        card = LinkCard("Email", "mailto:?subject=Hi", "", icon_url="", icon="email")
+        html = render_page(replace(MODEL, cards=[card]))
+        assert '<span class="card__target">mailto</span>' in html
+
     def test_keeps_the_tagline_out_of_the_page_and_on_one_line(self) -> None:
         html = render_page(replace(MODEL, tagline="First half\nsecond half"))
         assert 'class="tagline"' not in html
