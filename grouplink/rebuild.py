@@ -8,7 +8,6 @@ through `map_in_batches`, so the run opens at most batch.py's BATCH_SIZE at a ti
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from collections.abc import Mapping
@@ -20,7 +19,6 @@ from render_lab_tasks_github.get_file_contents import get_file_contents
 from render_lab_tasks_github.list_tree import list_tree
 from render_lab_tasks_github.types import CommitFilesFileInput
 from render_lab_tasks_http.request import request
-from render_lab_tasks_notion.query_database import query_database
 from render_lab_tasks_notion.types import PageDTO
 from render_lab_tasks_render.await_deploy import await_deploy
 from render_lab_tasks_render.trigger_deploy import trigger_deploy
@@ -37,21 +35,17 @@ from grouplink.links import (
     ProfilePage,
     ProfileRow,
     SkippedRow,
-    assert_default_slug,
     card_description,
     fetchable_urls,
-    group_by_profile,
     meta_cache_key,
     page_paths_for,
     skipped_rows,
     to_card,
-    to_link_rows,
-    to_profile_rows,
     unique_urls,
     unknown_icons,
-    visible_rows,
 )
 from grouplink.page import PageModel, render_page
+from grouplink.read_notion import read_notion_site
 
 log = logging.getLogger(__name__)
 
@@ -112,18 +106,11 @@ async def rebuild(ctx: TaskContext, input: RebuildInput | None = None) -> Rebuil
 async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
     cfg = load_config(input)
 
-    # 1) Parallel fan-out: read both databases. A link's `Profiles` relation holds the
-    #    Notion page ids of its Profiles rows, which is how the two join.
-    link_pages, profile_pages = await asyncio.gather(
-        ctx.run(query_database, {"databaseId": cfg.database_id, "limit": cfg.limit}),
-        ctx.run(query_database, {"databaseId": cfg.profiles_database_id, "limit": cfg.limit}),
-    )
+    # 1) Parallel fan-out: read both databases.
+    site = await read_notion_site(ctx, cfg)
+    pages = site.pages
 
-    profiles = to_profile_rows(profile_pages)
-    assert_default_slug(profiles, cfg.default_slug)
-    pages = group_by_profile(visible_rows(to_link_rows(link_pages)), profiles)
-
-    skipped = _report_notion_problems(link_pages, profiles)
+    skipped = _report_notion_problems(site.link_pages, site.profiles)
 
     # A link on three pages is one URL to look up, scrape, and health-check. A
     # mailto: card renders from its Notion row alone, so it is a card URL but not a

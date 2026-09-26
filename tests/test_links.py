@@ -19,6 +19,7 @@ from grouplink.links import (
     to_profile_rows,
     unique_urls,
     unknown_icons,
+    unnumbered_last,
     visible_rows,
 )
 
@@ -82,6 +83,40 @@ class TestToLinkRows:
 
     def test_defaults_the_icon_when_the_column_is_missing(self) -> None:
         assert to_link_rows([page({"URL": "https://a.example"}, "A")])[0].icon == "arrow"
+
+
+class TestOrder:
+    def test_reads_a_number_as_order_and_anything_else_as_none(self) -> None:
+        rows = to_link_rows(
+            [
+                page({"URL": "https://a.example", "Order": 10}, "A"),
+                page({"URL": "https://b.example", "Order": 2.5}, "B"),
+                page({"URL": "https://c.example", "Order": 0}, "C"),
+                page({"URL": "https://d.example", "Order": None}, "D"),
+                page({"URL": "https://e.example", "Order": "10"}, "E"),
+                page({"URL": "https://f.example", "Order": True}, "F"),
+                page({"URL": "https://g.example"}, "G"),
+            ]
+        )
+        assert [row.order for row in rows] == [10, 2.5, 0, None, None, None, None]
+
+
+class TestUnnumberedLast:
+    def test_moves_rows_with_no_order_to_the_end_and_keeps_input_order(self) -> None:
+        rows = to_link_rows(
+            [
+                page({"URL": "https://a.example"}, "Empty 1"),
+                page({"URL": "https://b.example", "Order": 20}, "Twenty"),
+                page({"URL": "https://c.example"}, "Empty 2"),
+                page({"URL": "https://d.example", "Order": 10}, "Ten"),
+            ]
+        )
+        assert [row.title for row in unnumbered_last(rows)] == [
+            "Twenty",
+            "Ten",
+            "Empty 1",
+            "Empty 2",
+        ]
 
 
 class TestToIconName:

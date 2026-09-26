@@ -25,6 +25,8 @@ class LinkRow:
     profile_ids: list[str]
     #: Which file under site/assets/link-icons the card draws.
     icon: IconName
+    #: The `Order` cell. None when the cell is empty or holds no number.
+    order: float | None
 
 
 class CardSource(Protocol):
@@ -52,7 +54,7 @@ class ProfileRow:
 
 @dataclass(frozen=True)
 class ProfilePage:
-    """A profile and the links that relate to it, in the order Notion returned them."""
+    """A profile and the links that relate to it, in `Order`."""
 
     profile: ProfileRow
     rows: list[LinkRow]
@@ -82,6 +84,13 @@ def to_icon_name(value: PropertyValue | None) -> IconName:
     return name if is_icon_name(name) else DEFAULT_ICON
 
 
+def _read_order(value: PropertyValue | None) -> float | None:
+    """A Notion number arrives as int or float. bool is a subclass of int, so skip it."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return value
+
+
 def _profile_ids(value: PropertyValue | None) -> list[str]:
     return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
 
@@ -104,7 +113,25 @@ def read_link_row(page: PageDTO) -> LinkRow:
         everyone=props.get("Everyone") is True,
         profile_ids=_profile_ids(props.get("Profiles")),
         icon=to_icon_name(props.get("Icon")),
+        order=_read_order(props.get("Order")),
     )
+
+
+#: The links query sort. Rows with the same `Order` go oldest first.
+LINK_SORTS: list[dict[str, str]] = [
+    {"property": "Order", "direction": "ascending"},
+    {"timestamp": "created_time", "direction": "ascending"},
+]
+
+
+def unnumbered_last(rows: list[LinkRow]) -> list[LinkRow]:
+    """The rows with an `Order`, then the rows without one, each group in input order.
+
+    The Notion API does not say where a sort puts empty numbers, so this puts them last.
+    """
+    numbered = [row for row in rows if row.order is not None]
+    unnumbered = [row for row in rows if row.order is None]
+    return numbered + unnumbered
 
 
 def is_renderable_url(url: str) -> bool:
@@ -249,7 +276,7 @@ def assert_default_slug(profiles: list[ProfileRow], default_slug: str) -> None:
 
 
 def visible_rows(rows: list[LinkRow]) -> list[LinkRow]:
-    """Cards render in the order the Notion database returned them."""
+    """The visible rows, in input order. Cards render in this order."""
     return [row for row in rows if row.visible]
 
 

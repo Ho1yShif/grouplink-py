@@ -13,24 +13,15 @@ from __future__ import annotations
 import asyncio
 
 from dotenv import load_dotenv
-from render_lab_tasks_notion.query_database import query_database
 from render_lab_tasks_scrape.extract_metadata import extract_metadata
 from render_lab_test_utils import local_ctx
 
 import grouplink.notion_relation  # noqa: F401  (imported for its side effect)
 from grouplink.batch import map_in_batches
 from grouplink.config import load_config
-from grouplink.links import (
-    assert_default_slug,
-    card_description,
-    group_by_profile,
-    to_card,
-    to_link_rows,
-    to_profile_rows,
-    unique_urls,
-    visible_rows,
-)
+from grouplink.links import card_description, to_card, unique_urls
 from grouplink.page import PageModel
+from grouplink.read_notion import read_notion_site
 from scripts.write_pages import REPO_ROOT, write_pages
 
 
@@ -39,15 +30,7 @@ async def main() -> None:
     ctx = local_ctx()
     cfg = load_config({"dryRun": True})
 
-    link_pages, profile_pages = await asyncio.gather(
-        ctx.run(query_database, {"databaseId": cfg.database_id, "limit": cfg.limit}),
-        ctx.run(query_database, {"databaseId": cfg.profiles_database_id, "limit": cfg.limit}),
-    )
-
-    profiles = to_profile_rows(profile_pages)
-    assert_default_slug(profiles, cfg.default_slug)
-
-    pages = group_by_profile(visible_rows(to_link_rows(link_pages)), profiles)
+    pages = (await read_notion_site(ctx, cfg)).pages
     card_urls = unique_urls([row for page in pages for row in page.rows])
 
     scraped = await map_in_batches(

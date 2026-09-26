@@ -42,6 +42,7 @@ from render_lab_tasks_scrape.extract_metadata import extract_metadata_impl
 from render_lab_tasks_slack.client import SlackDeps, SlackWebhook
 from render_lab_tasks_slack.post_message import post_message_impl
 
+from grouplink.links import LINK_SORTS
 from grouplink.rebuild import rebuild
 
 ENV = {
@@ -74,8 +75,9 @@ def raw_page(
     visible: bool = True,
     profiles: list[str] | None = None,
     everyone: bool = False,
+    order: float | None = None,
 ) -> dict[str, Any]:
-    """`n` only makes the Notion page id unique."""
+    """`n` only makes the Notion page id unique. An `order` of None is an empty cell."""
     return {
         "id": f"p-{n}",
         "url": f"https://www.notion.so/p-{n}",
@@ -90,6 +92,7 @@ def raw_page(
                 "type": "relation",
                 "relation": [{"id": id} for id in ([SHIFRA] if profiles is None else profiles)],
             },
+            "Order": {"type": "number", "number": order},
         },
     }
 
@@ -160,6 +163,8 @@ class Harness:
         self.fakes = fakes
         self.scraped: list[str] = []
         self.checked: list[str] = []
+        #: Data source id -> the body of its Notion query.
+        self.notion_queries: dict[str, dict[str, Any]] = {}
         self.blobs: list[str] = []
         self.trees: list[list[dict[str, Any]]] = []
         self.commits: list[dict[str, Any]] = []
@@ -194,6 +199,7 @@ class Harness:
             return httpx.Response(200, json={"data_sources": [{"id": f"ds-{database_id}"}]})
         if path.startswith("/v1/data_sources/") and path.endswith("/query"):
             source = path.split("/")[3]
+            self.notion_queries[source] = json.loads(request.content) if request.content else {}
             rows = (
                 PROFILE_PAGES
                 if source == "ds-db_profiles"
@@ -374,6 +380,40 @@ class TestRebuild:
         assert html.index("Discord") < html.index("Startups")
         assert "Hidden" not in html
         assert "render.com/secret" not in html
+
+    async def test_sorts_the_links_query_and_leaves_the_profiles_query_unsorted(
+        self, env: Any
+    ) -> None:
+        env(DRY_RUN="true")
+        h = harness()
+        await rebuild.func(h.ctx, {})
+
+        assert h.notion_queries["ds-db_links"]["sorts"] == LINK_SORTS
+        assert "sorts" not in h.notion_queries["ds-db_profiles"]
+
+    async def test_keeps_a_personal_row_in_its_place_among_the_everyone_rows(
+        self, env: Any
+    ) -> None:
+        h = harness(
+            links=[
+                raw_page(
+                    "Docs", "https://render.com/docs", 1, profiles=[], everyone=True, order=10
+                ),
+                raw_page("Mine", "https://example.com/mine", 2, order=15),
+                raw_page(
+                    "Blog", "https://render.com/blog", 3, profiles=[], everyone=True, order=20
+                ),
+            ]
+        )
+        await rebuild.func(h.ctx, {})
+        files = h.committed()
+
+        shifra = files["site/shifra/index.html"]
+        assert shifra.index("Docs") < shifra.index("Mine") < shifra.index("Blog")
+
+        alex = files["site/alex/index.html"]
+        assert "Mine" not in alex
+        assert alex.index("Docs") < alex.index("Blog")
 
     async def test_puts_a_profiles_links_in_its_own_file_and_nobody_elses(self, env: Any) -> None:
         h = harness()
