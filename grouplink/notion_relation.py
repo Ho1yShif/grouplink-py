@@ -8,7 +8,7 @@ row's `Profiles` relation therefore arrives as None, and every link row without
 
 This is the gap render-lab/render-tasks#28 fixed for TypeScript. Delete this module
 once the same fix ships in a render-lab-tasks-notion release, and drop the import
-from grouplink/main.py, grouplink/rebuild.py, and scripts/preview.py.
+from grouplink/app.py, scripts/preview.py, and tests/test_notion_relation.py.
 
 Replacing the module attribute is enough: `page()` looks `simplify_property` up as a
 module global on every property it reads.
