@@ -19,7 +19,7 @@ from render_lab_test_utils import local_ctx
 import grouplink.notion_relation  # noqa: F401  (imported for its side effect)
 from grouplink.batch import map_in_batches
 from grouplink.config import load_config
-from grouplink.links import card_description, to_card, unique_urls
+from grouplink.links import card_description, fetchable_urls, to_card, unique_urls
 from grouplink.page import PageModel
 from grouplink.read_notion import read_notion_site
 from scripts.write_pages import REPO_ROOT, write_pages
@@ -31,7 +31,9 @@ async def main() -> None:
     cfg = load_config({"dryRun": True})
 
     pages = (await read_notion_site(ctx, cfg)).pages
-    card_urls = unique_urls([row for page in pages for row in page.rows])
+    # Only the http(s) cards are scraped. A mailto: card has no page, and httpx
+    # refuses the URL, which is what grouplink.rebuild does too.
+    card_urls = fetchable_urls(unique_urls([row for page in pages for row in page.rows]))
 
     scraped = await map_in_batches(
         card_urls, lambda url, _i: ctx.run(extract_metadata, {"url": url})
