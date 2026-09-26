@@ -108,12 +108,18 @@ There are two. Links:
 | Property   | Type     | Purpose                                                                                   |
 | ---------- | -------- | ----------------------------------------------------------------------------------------- |
 | `Title`    | title    | Card text. Not scraped — this is the copy you control.                                    |
-| `URL`      | url      | Where the card points. `http://`, `https://`, or `mailto:`; other rows skip.              |
+| `URL`      | url      | Where the card points. See below.                                                         |
 | `Visible`  | checkbox | Unchecked rows are dropped.                                                               |
 | `Everyone` | checkbox | Checked puts the link on every profile's page.                                            |
 | `Profiles` | relation | Which pages the link appears on. Relate it to two rows and it appears on both.            |
 | `Icon`     | select   | Which icon the card draws. One option per file under `site/assets/link-icons/`.           |
 | `Order`    | number   | Card position, lowest first. Ties go oldest first. Rows with no number go last. Required. |
+
+A `URL` cell is read as `https://`. A cell with no scheme, such as `render.com`,
+gets `https://`, and an `http://` cell is upgraded. A `mailto:` cell keeps its
+scheme, and the card renders without a scrape or a health check. Any other
+scheme, such as `ftp://`, skips the row. The rebuild lists every skipped row and
+the check it failed.
 
 Profiles:
 
@@ -480,7 +486,7 @@ curl -X POST https://grouplink-webhook.onrender.com/tasks/grouplink.rebuild \
   -d '[{"dryRun":true}]'
 ```
 
-## Tests
+## Checks
 
 - `uv run pytest` — Tier 1. Hermetic. The composition test drives the real
   `grouplink.rebuild`, routing every chained run to the owning package's

@@ -17,6 +17,7 @@ that allow it test it with `is_mailto_url` first.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 SPECIAL_PORTS = {"http": 80, "https": 443, "ws": 80, "wss": 443, "ftp": 21, "file": None}
@@ -122,6 +123,40 @@ def is_mailto_url(value: str) -> bool:
     """True for a mailto: URL with at least one recipient."""
     cleaned = _clean(value)
     return cleaned.lower().startswith(_MAILTO) and len(cleaned) > len(_MAILTO)
+
+
+# A scheme and the two slashes that follow it. The test is `://`, not the scheme
+# grammar of RFC 3986, because `render.com` in `render.com:8080/x` also matches that
+# grammar. The `normalize-url` package and a browser address bar make the same test.
+_SCHEME_PREFIX = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.\-]*)://")
+
+
+def normalize_url(value: str) -> str:
+    """The URL a card points at, from whatever the Notion cell holds.
+
+    A cell with no scheme gets `https://`. An `http://` cell becomes `https://`. A
+    `mailto:` cell keeps its scheme. Any other scheme stays as it is, so
+    `links.is_renderable_url` still rejects it.
+
+    A cell that is not a host gets no scheme. `javascript:alert(1)` would become
+    `https://javascript:alert(1)`, which `is_http_url` accepts and httpx cannot use.
+    The cell is returned unchanged instead, and the row is skipped.
+    """
+    cleaned = _clean(value)
+    if not cleaned:
+        return ""
+
+    if cleaned.lower().startswith(_MAILTO):
+        return normalize_mailto(cleaned)
+
+    match = _SCHEME_PREFIX.match(cleaned)
+    if match is not None:
+        scheme = match.group(1).lower()
+        rest = cleaned[match.end() :]
+        return f"https://{rest}" if scheme == "http" else f"{scheme}://{rest}"
+
+    candidate = f"https://{cleaned}"
+    return candidate if parse(candidate) is not None else cleaned
 
 
 def normalize_mailto(value: str) -> str:

@@ -467,8 +467,8 @@ class TestRebuild:
                 *LINK_PAGES,
                 raw_page("Orphan", "https://example.com/orphan", 20, profiles=[]),
                 raw_page("No URL", "", 21),
-                raw_page("Schemeless", "render.com/careers", 22),
                 raw_page("FTP", "ftp://example.com", 23),
+                raw_page("Script", "javascript:alert(1)", 22),
             ]
         )
         result = await rebuild.func(h.ctx, {})
@@ -477,19 +477,32 @@ class TestRebuild:
         assert reasons["Hidden"] == "Visible is unchecked"
         assert reasons["Orphan"] == "no Profiles relation and Everyone is unchecked"
         assert reasons["No URL"] == "no URL"
-        assert reasons["Schemeless"] == "URL is neither http://, https://, nor mailto:"
-        assert reasons["FTP"] == "URL is neither http://, https://, nor mailto:"
+        assert reasons["FTP"] == "URL is not an http, https, or mailto: link"
+        assert reasons["Script"] == "URL is not an http, https, or mailto: link"
 
-    async def test_never_fetches_a_url_with_no_scheme(self, env: Any) -> None:
-        """httpx refuses a URL with no scheme, so before this check one bad Notion row
-        failed the whole run and the site kept serving the previous commit.
+    async def test_reads_a_url_with_no_scheme_as_https(self, env: Any) -> None:
+        """A Notion cell that holds a bare host renders. The run scrapes and checks the
+        https URL, because httpx refuses the cell as typed.
         """
-        h = harness(links=[*LINK_PAGES, raw_page("Schemeless", "render.com/careers", 22)])
+        h = harness(links=[*LINK_PAGES, raw_page("Bare host", "render.com/careers", 22)])
         await rebuild.func(h.ctx, {})
 
         assert "render.com/careers" not in h.scraped
         assert "render.com/careers" not in h.checked
-        assert "Schemeless" not in h.committed_html()
+        assert "https://render.com/careers" in h.scraped
+        assert "https://render.com/careers" in h.checked
+        assert "Bare host" in h.committed_html()
+
+    async def test_never_fetches_a_url_httpx_refuses(self, env: Any) -> None:
+        """httpx refuses a URL with no usable scheme, so before this check one bad Notion
+        row failed the whole run and the site kept serving the previous commit.
+        """
+        h = harness(links=[*LINK_PAGES, raw_page("Script", "javascript:alert(1)", 22)])
+        await rebuild.func(h.ctx, {})
+
+        assert "javascript:alert(1)" not in h.scraped
+        assert "javascript:alert(1)" not in h.checked
+        assert "Script" not in h.committed_html()
 
     async def test_renders_a_mailto_row_without_scraping_or_checking_it(self, env: Any) -> None:
         address = "mailto:shifra@render.com"

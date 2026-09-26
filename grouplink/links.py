@@ -9,7 +9,7 @@ from typing import Any, Protocol
 from render_lab_tasks_notion.types import PageDTO, PropertyValue
 
 from grouplink.icons import DEFAULT_ICON, IconName, is_icon_name
-from grouplink.jsurl import is_http_url, is_mailto_url
+from grouplink.jsurl import is_http_url, is_mailto_url, normalize_url
 from grouplink.jsurl import parse as parse_url
 from grouplink.page import LinkCard
 
@@ -108,7 +108,7 @@ def read_link_row(page: PageDTO) -> LinkRow:
     props = page["properties"]
     return LinkRow(
         title=_read_string(page["title"]) or _read_string(props.get("Title")),
-        url=_read_string(props.get("URL")),
+        url=normalize_url(_read_string(props.get("URL"))),
         visible=props.get("Visible") is not False,
         everyone=props.get("Everyone") is True,
         profile_ids=_profile_ids(props.get("Profiles")),
@@ -140,8 +140,11 @@ def is_renderable_url(url: str) -> bool:
     An http(s) link is scraped and health-checked; a mailto: link is neither, and
     still renders. Anything else would reach httpx as a string it refuses, which
     fails the whole rebuild rather than the one row.
+
+    The http branch also parses the URL. An http(s) string httpx cannot use, such as
+    a host with a space in it, fails here instead of in the scrape.
     """
-    return is_http_url(url) or is_mailto_url(url)
+    return (is_http_url(url) and parse_url(url) is not None) or is_mailto_url(url)
 
 
 def to_link_rows(pages: list[PageDTO]) -> list[LinkRow]:
@@ -155,7 +158,7 @@ def _skip_reason(row: LinkRow, known_ids: frozenset[str]) -> str:
     if not row.url:
         return "no URL"
     if not is_renderable_url(row.url):
-        return "URL is neither http://, https://, nor mailto:"
+        return "URL is not an http, https, or mailto: link"
     if not row.title:
         return "no Title"
     if not row.visible:

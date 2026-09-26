@@ -58,17 +58,27 @@ class TestToLinkRows:
 
     @pytest.mark.parametrize(
         "url",
-        ["render.com/careers", "ftp://example.com", "mailto:", "javascript:alert(1)"],
+        ["ftp://example.com", "mailto:", "javascript:alert(1)", "https://a b/"],
     )
     def test_skips_a_url_the_site_cannot_link_to(self, url: str) -> None:
         assert to_link_rows([page({"URL": url}, "Bad")]) == []
 
     @pytest.mark.parametrize(
         "url",
-        ["https://render.com", "http://render.com", "mailto:shifra@render.com"],
+        ["https://render.com", "mailto:shifra@render.com"],
     )
     def test_keeps_an_http_or_mailto_url(self, url: str) -> None:
         assert [row.url for row in to_link_rows([page({"URL": url}, "Good")])] == [url]
+
+    @pytest.mark.parametrize(
+        ("cell", "expected"),
+        [
+            ("http://render.com", "https://render.com"),
+            ("render.com/careers", "https://render.com/careers"),
+        ],
+    )
+    def test_reads_a_row_as_https(self, cell: str, expected: str) -> None:
+        assert [row.url for row in to_link_rows([page({"URL": cell}, "Good")])] == [expected]
 
     def test_keeps_the_notion_order_and_drops_hidden_rows(self) -> None:
         assert [row.title for row in visible_rows(to_link_rows(PAGES))] == ["B", "A", "X"]
@@ -192,8 +202,8 @@ class TestSkippedRows:
             page({"URL": "https://h.example", "Visible": False, "Everyone": True}, "Hidden"),
             page({"URL": "https://o.example"}, "Orphan"),
             page({"URL": "https://g.example", "Profiles": ["profile-ghost"]}, "Ghost"),
-            page({"URL": "render.com/careers", "Profiles": ["profile-shifra"]}, "Schemeless"),
             page({"URL": "ftp://example.com", "Profiles": ["profile-shifra"]}, "FTP"),
+            page({"URL": "javascript:alert(1)", "Profiles": ["profile-shifra"]}, "Script"),
             page({"URL": "mailto:shifra@render.com", "Profiles": ["profile-shifra"]}, "Email"),
         ]
         assert [(row.title, row.reason) for row in skipped_rows(pages, profiles)] == [
@@ -202,8 +212,8 @@ class TestSkippedRows:
             ("Hidden", "Visible is unchecked"),
             ("Orphan", "no Profiles relation and Everyone is unchecked"),
             ("Ghost", "its Profiles relation points at no row in the Profiles database"),
-            ("Schemeless", "URL is neither http://, https://, nor mailto:"),
-            ("FTP", "URL is neither http://, https://, nor mailto:"),
+            ("FTP", "URL is not an http, https, or mailto: link"),
+            ("Script", "URL is not an http, https, or mailto: link"),
         ]
 
 
