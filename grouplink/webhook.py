@@ -16,6 +16,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from render_lab_triggers import create_dispatch_server, render_dispatcher
+from render_lab_triggers.types import WorkflowDispatcher
 
 from grouplink.config import env_int
 from grouplink.logs import configure as configure_logging
@@ -43,11 +44,11 @@ class Receiver:
     client.
     """
 
-    def __init__(self, *, workflow_slug: str, webhook: NotionWebhook) -> None:
+    def __init__(
+        self, *, workflow_slug: str, dispatcher: WorkflowDispatcher, webhook: NotionWebhook
+    ) -> None:
         self._webhook = webhook
-        self._server = create_dispatch_server(
-            workflow_slug=workflow_slug, dispatcher=render_dispatcher(slug=workflow_slug)
-        )
+        self._server = create_dispatch_server(workflow_slug=workflow_slug, dispatcher=dispatcher)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope["path"] != NOTION_PATH or scope["method"] != "POST":
@@ -92,6 +93,7 @@ def build_receiver() -> Receiver:
     dispatcher = render_dispatcher(slug=workflow_slug)
     return Receiver(
         workflow_slug=workflow_slug,
+        dispatcher=dispatcher,
         webhook=NotionWebhook(
             dispatch=dispatcher.start,
             task=os.environ.get("REBUILD_TASK", "grouplink.rebuild"),

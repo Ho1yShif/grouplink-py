@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict
 
 from render import TaskContext
 from render_lab_tasks_github.commit_files import commit_files
@@ -85,11 +85,6 @@ class RebuildResult(TypedDict):
     deployId: str | None
     siteUrl: str
     dryRun: bool
-
-
-class SiteFile(TypedDict):
-    path: str
-    content: str
 
 
 @app.task(name="grouplink.rebuild")
@@ -167,7 +162,7 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
 
     # 6) Render one file per profile, plus a second copy of the default profile's page
     #    at the site root, so `/` and `/<default slug>` serve the same thing.
-    files: list[SiteFile] = []
+    files: list[CommitFilesFileInput] = []
     for page in pages:
         content = render_page(_to_model(page, meta_by_url))
         paths = page_paths_for(cfg.site_dir, page.profile.slug, cfg.default_slug)
@@ -210,11 +205,7 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
         file["path"]: current["content"] for file, current in zip(existing, currents, strict=True)
     }
 
-    changed = [
-        file
-        for file in files
-        if file["path"] not in current_by_path or current_by_path[file["path"]] != file["content"]
-    ]
+    changed = [file for file in files if current_by_path.get(file["path"]) != file["content"]]
     result["changedPaths"] = [file["path"] for file in changed]
 
     if not changed:
@@ -232,8 +223,8 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
             "owner": cfg.repo_owner,
             "repo": cfg.repo_name,
             "branch": cfg.branch,
-            "message": (f"chore(site): rebuild {len(changed)} page(s) ({len(card_urls)} links)"),
-            "files": cast(list[CommitFilesFileInput], changed),
+            "message": f"chore(site): rebuild {len(changed)} page(s) ({len(card_urls)} links)",
+            "files": changed,
         },
     )
     result["committed"] = True

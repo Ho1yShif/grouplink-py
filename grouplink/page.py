@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import re
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -503,27 +504,13 @@ def _render_social(social: SocialLink) -> str:
     )
 
 
+# A run of ASCII whitespace that holds at least one line break.
+_LINE_BREAK_RUN = re.compile(r"[ \t\r\n\f\v]*\n[ \t\r\n\f\v]*")
+
+
 def _one_line(tagline: str) -> str:
     """Collapse every run of whitespace around a line break into a single space."""
-    out: list[str] = []
-    i = 0
-    while i < len(tagline):
-        char = tagline[i]
-        if char in " \t\r\n\f\v":
-            run_end = i
-            while run_end < len(tagline) and tagline[run_end] in " \t\r\n\f\v":
-                run_end += 1
-            run = tagline[i:run_end]
-            if "\n" in run:
-                out.append(" ")
-                i = run_end
-                continue
-            out.append(run)
-            i = run_end
-            continue
-        out.append(char)
-        i += 1
-    return "".join(out).strip()
+    return _LINE_BREAK_RUN.sub(" ", tagline).strip()
 
 
 def render_page(model: PageModel, year: int | None = None) -> str:

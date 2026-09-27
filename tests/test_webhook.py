@@ -51,6 +51,7 @@ def receiver() -> Receiver:
     dispatcher = Dispatcher()
     return Receiver(
         workflow_slug="grouplink",
+        dispatcher=dispatcher,
         webhook=NotionWebhook(dispatch=dispatcher.start, task="grouplink.rebuild"),
     )
 

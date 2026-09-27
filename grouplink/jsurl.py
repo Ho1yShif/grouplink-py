@@ -83,13 +83,6 @@ class ParsedUrl:
     fragment: str | None
 
     @property
-    def origin(self) -> str:
-        host = self.hostname
-        if self.port is not None:
-            host = f"{host}:{self.port}"
-        return f"{self.scheme}://{host}"
-
-    @property
     def authority(self) -> str:
         prefix = f"{self.userinfo}@" if self.userinfo else ""
         host = self.hostname
