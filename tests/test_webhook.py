@@ -1,5 +1,5 @@
-"""The ASGI wrapper. It owns POST /webhooks/notion and delegates everything else to
-the render-lab-triggers DispatchServer.
+"""The non-page routes of the web service: POST /webhooks/notion, and the routes it
+delegates to the render-lab-triggers DispatchServer.
 """
 
 from __future__ import annotations
@@ -8,9 +8,11 @@ import json
 from typing import Any
 
 import pytest
+from starlette.testclient import TestClient
 
 from grouplink.notion_webhook import NotionWebhook
-from grouplink.webhook import Receiver, build_receiver
+from grouplink.site_store import SiteStore
+from grouplink.webhook import build_app, create_app
 
 
 class Dispatcher:
@@ -22,70 +24,58 @@ class Dispatcher:
         return {"runId": "run-1"}
 
 
-async def call(app: Any, method: str, path: str, body: str = "") -> dict[str, Any]:
-    sent: list[dict[str, Any]] = []
-    scope = {
-        "type": "http",
-        "method": method,
-        "path": path,
-        "headers": [(b"content-type", b"application/json")],
-        "query_string": b"",
-    }
-    messages = iter([{"type": "http.request", "body": body.encode(), "more_body": False}])
-
-    async def receive() -> dict[str, Any]:
-        return next(messages)
-
-    async def send(message: dict[str, Any]) -> None:
-        sent.append(message)
-
-    await app(scope, receive, send)
-    return {
-        "status": sent[0]["status"],
-        "body": sent[1]["body"].decode(),
-    }
+async def no_site() -> str | None:
+    return None
 
 
 @pytest.fixture
-def receiver() -> Receiver:
+def client() -> TestClient:
     dispatcher = Dispatcher()
-    return Receiver(
-        workflow_slug="grouplink",
-        dispatcher=dispatcher,
-        webhook=NotionWebhook(dispatch=dispatcher.start, task="grouplink.rebuild"),
+    return TestClient(
+        create_app(
+            workflow_slug="grouplink",
+            dispatcher=dispatcher,
+            webhook=NotionWebhook(dispatch=dispatcher.start, task="grouplink.rebuild"),
+            store=SiteStore(read=no_site, rebuild=lambda: dispatcher.start("x", [])),
+        )
     )
 
 
-async def test_answers_the_notion_route_itself(receiver: Receiver) -> None:
+def test_answers_the_notion_route_itself(client: TestClient) -> None:
     body = json.dumps({"verification_token": "from-notion"})
-    response = await call(receiver, "POST", "/webhooks/notion", body)
-    assert response["status"] == 200
-    assert json.loads(response["body"]) == {"ok": True}
+    response = client.post("/webhooks/notion", content=body)
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
 
 
-async def test_sends_no_body_with_a_204(receiver: Receiver) -> None:
+def test_sends_no_body_with_a_204(client: TestClient) -> None:
     body = json.dumps({"type": "comment.created"})
-    response = await call(receiver, "POST", "/webhooks/notion", body)
-    assert response["status"] == 204
-    assert response["body"] == ""
+    response = client.post("/webhooks/notion", content=body)
+    assert response.status_code == 204
+    assert response.content == b""
 
 
-async def test_delegates_the_health_check_to_the_dispatch_server(receiver: Receiver) -> None:
-    response = await call(receiver, "GET", "/healthz")
-    assert (response["status"], response["body"]) == (200, "ok")
+def test_delegates_the_health_check_to_the_dispatch_server(client: TestClient) -> None:
+    response = client.get("/healthz")
+    assert (response.status_code, response.text) == (200, "ok")
 
 
-async def test_delegates_an_unauthenticated_task_dispatch(receiver: Receiver) -> None:
-    response = await call(receiver, "POST", "/tasks/grouplink.rebuild", "[]")
-    assert response["status"] == 401
+def test_delegates_an_unauthenticated_task_dispatch(client: TestClient) -> None:
+    response = client.post("/tasks/grouplink.rebuild", content="[]")
+    assert response.status_code == 401
 
 
-async def test_delegates_a_get_on_the_notion_path(receiver: Receiver) -> None:
-    response = await call(receiver, "GET", "/webhooks/notion")
-    assert response["status"] == 404
+def test_refuses_a_get_on_the_notion_path(client: TestClient) -> None:
+    response = client.get("/webhooks/notion")
+    assert response.status_code == 405
 
 
-def test_build_receiver_names_the_variable_it_needs(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_app_names_the_variables_it_needs(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("WORKFLOW_SLUG", raising=False)
+    monkeypatch.delenv("REDIS_URL", raising=False)
     with pytest.raises(ValueError, match="WORKFLOW_SLUG"):
-        build_receiver()
+        build_app()
+
+    monkeypatch.setenv("WORKFLOW_SLUG", "grouplink")
+    with pytest.raises(ValueError, match="REDIS_URL"):
+        build_app()

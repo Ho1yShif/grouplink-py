@@ -30,7 +30,8 @@ projects:
                 name: Cache-Control
                 value: public, max-age=31536000, immutable
 
-          # Notion posts here on every edit; the receiver debounces and starts one
+          # Serves each profile's page from the snapshot in Key Value. Notion posts
+          # here on every edit; the receiver debounces and starts one
           # grouplink.rebuild run. On the starter plan so it is always on — a free
           # instance spins down after 15 minutes idle, and this is the only trigger.
           - type: web
@@ -68,6 +69,12 @@ projects:
                 value: grouplink.rebuild
               - key: DEBOUNCE_MS
                 value: "60000"
+              # The web service reads the published site from here.
+              - key: REDIS_URL
+                fromService:
+                  type: keyvalue
+                  name: grouplink-cache
+                  property: connectionString
 
           - type: keyvalue
             name: grouplink-cache
@@ -76,5 +83,6 @@ projects:
             # volatile-lru evicts only keys with a TTL. The scraped metadata has one;
             # grouplink:site, the published site, does not, so it is never evicted.
             maxmemoryPolicy: volatile-lru
-            # Private network only. The Workflow reaches it over the internal URL.
+            # Private network only. The Workflow and the web service reach it over
+            # the internal URL.
             ipAllowList: []
