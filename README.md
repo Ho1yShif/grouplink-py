@@ -40,7 +40,7 @@ profile's page model and the default slug, but no HTML. The run writes it with o
 `SET` and no TTL, and skips the write when the hash matches the published one. The
 page is live as soon as the `SET` returns.
 
-`grouplink-webhook` reads the key on each page request and renders it with
+`grouplink-webhook-py` reads the key on each page request and renders it with
 `grouplink/page.py`. A change to `page.py` goes live with the web service deploy
 and needs no rebuild. If Key Value is down or the value won't parse, the service
 serves its last good copy from memory, and it answers 503 if it has none. If the
@@ -48,7 +48,7 @@ key is missing, it starts a `grouplink.rebuild` and answers 503 until the run
 writes the key. It starts another run every 10 minutes while the key stays
 missing.
 
-A run starts when someone edits Notion. `grouplink-webhook` verifies Notion's signature, drops the event types that can't
+A run starts when someone edits Notion. `grouplink-webhook-py` verifies Notion's signature, drops the event types that can't
 change a page, and waits 60 seconds of quiet before dispatching
 `grouplink.rebuild`. Editing eight rows in one sitting gives you one run.
 
@@ -274,7 +274,7 @@ Dashboard and everything else comes from [`render.yaml`](render.yaml).
 The Blueprint comes first even though the web service needs the Workflow's slug,
 because the Workflow needs `REDIS_URL` from the Key Value instance, and the
 Blueprint creates it.
-`grouplink-webhook` fails its first deploy as a result: it exits at startup
+`grouplink-webhook-py` fails its first deploy as a result: it exits at startup
 while `WORKFLOW_SLUG` is empty, and step 5 is what fixes it.
 
 1. Create the Notion connection at
@@ -306,7 +306,7 @@ while `WORKFLOW_SLUG` is empty, and step 5 is what fixes it.
 
 2. Click the button, or Dashboard → **New > Blueprint** and link this repo. It
    creates the Key Value instance (`grouplink-cache`) and the web service
-   (`grouplink-webhook`). Leave `WORKFLOW_SLUG` blank when it prompts. Note the
+   (`grouplink-webhook-py`). Leave `WORKFLOW_SLUG` blank when it prompts. Note the
    web service's URL. The button reads `render.yaml` from `main`, so push first.
 3. Dashboard → **New > Workflow** on the same repo.
    Build: `pip install -r requirements.txt`. Start: `python -m grouplink.main`.
@@ -325,7 +325,7 @@ while `WORKFLOW_SLUG` is empty, and step 5 is what fixes it.
 
    Confirm the tasks appear on the service's Tasks page and note the slug.
 
-5. Set `WORKFLOW_SLUG` and `RENDER_API_KEY` on `grouplink-webhook` and redeploy
+5. Set `WORKFLOW_SLUG` and `RENDER_API_KEY` on `grouplink-webhook-py` and redeploy
    it. Leave `NOTION_WEBHOOK_SECRET` unset for now.
 6. Create the Notion subscription and finish the handshake. See
    [The Notion subscription](#the-notion-subscription).
@@ -341,7 +341,7 @@ tab won't show it and there is nothing to look up in advance.
 1. Open the connection's **Webhooks** tab — a separate tab from
    **Configuration** — and click **+ Create a subscription**.
 2. Set the webhook URL to
-   `https://grouplink-webhook.onrender.com/webhooks/notion`. You may need to append your slug to this URL
+   `https://grouplink-webhook-py.onrender.com/webhooks/notion`. You may need to append your slug to this URL
 3. Click the minus sign to unsubscribe from all events so you can select only the ones you need.
    Subscribe to `page.created`, `page.deleted`, `page.undeleted`,
    `page.properties_updated`, `page.content_updated`,
@@ -355,7 +355,7 @@ tab won't show it and there is nothing to look up in advance.
    Render and copy the value.
 6. Back on the Webhooks tab, click the **Verify** button next to the
    subscription, paste the token, and confirm.
-7. Set the same value as `NOTION_WEBHOOK_SECRET` on `grouplink-webhook` and redeploy.
+7. Set the same value as `NOTION_WEBHOOK_SECRET` on `grouplink-webhook-py` and redeploy.
    From then on every request needs a valid `X-Notion-Signature`.
 
 The receiver filters on event type alone. Under Notion API version 2025-09-03 an
@@ -376,7 +376,7 @@ exists and you know its hostname.
 1. Create the connection as above, but set the type to **Public**. Notion asks
    for a company name, a homepage URL, a privacy policy URL, and a terms URL,
    and any reachable page satisfies all four.
-2. Set the redirect URI to `https://grouplink-webhook.onrender.com/oauth`,
+2. Set the redirect URI to `https://grouplink-webhook-py.onrender.com/oauth`,
    substituting the receiver's real hostname if Render had to suffix the name.
    Nothing serves that path, so the redirect 404s and the code stays in the
    address bar. The form prepends `https://` to whatever you type, so a
@@ -391,7 +391,7 @@ exists and you know its hostname.
    this:
 
    ```
-   https://api.notion.com/v1/oauth/authorize?client_id=<CLIENT_ID>&response_type=code&owner=user&redirect_uri=https%3A%2F%2Fgrouplink-webhook.onrender.com%2Foauth
+   https://api.notion.com/v1/oauth/authorize?client_id=<CLIENT_ID>&response_type=code&owner=user&redirect_uri=https%3A%2F%2Fgrouplink-webhook-py.onrender.com%2Foauth
    ```
 
    Pick the links and profiles databases, and approve. The browser lands on the
@@ -413,7 +413,7 @@ exists and you know its hostname.
      -d "{
        \"grant_type\": \"authorization_code\",
        \"code\": \"$CODE\",
-       \"redirect_uri\": \"https://grouplink-webhook.onrender.com/oauth\"
+       \"redirect_uri\": \"https://grouplink-webhook-py.onrender.com/oauth\"
      }"
    ```
 
@@ -444,7 +444,7 @@ Workflow service. The `access_token` goes in as `NOTION_TOKEN` at step 4.
 a Notion edit, and takes the same run input the CLI does:
 
 ```bash
-curl -X POST https://grouplink-webhook.onrender.com/tasks/grouplink.rebuild \
+curl -X POST https://grouplink-webhook-py.onrender.com/tasks/grouplink.rebuild \
   -H "Authorization: Bearer $DISPATCH_TOKEN" \
   -H "Content-Type: application/json" \
   -d '[{"dryRun":true}]'

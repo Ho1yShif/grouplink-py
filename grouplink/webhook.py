@@ -1,4 +1,4 @@
-"""Entry point for grouplink-webhook, the web service that serves the page and
+"""Entry point for grouplink-webhook-py, the web service that serves the page and
 receives Notion's webhook.
 
 It serves each profile's page from the snapshot grouplink.rebuild writes to Key
@@ -208,7 +208,7 @@ def main() -> None:
 
     configure_logging()
     port = env_int("PORT", os.environ.get("PORT"), 3000)
-    log.info("grouplink-webhook listening on %s", port)
+    log.info("grouplink-webhook-py listening on %s", port)
     uvicorn.run(build_app(), host="0.0.0.0", port=port)
 
 

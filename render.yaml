@@ -16,7 +16,7 @@ projects:
           # grouplink.rebuild run. On the starter plan so it is always on — a free
           # instance spins down after 15 minutes idle, and this is the only trigger.
           - type: web
-            name: grouplink-webhook
+            name: grouplink-webhook-py
             runtime: python
             plan: starter
             region: oregon
