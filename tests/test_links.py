@@ -260,7 +260,7 @@ class TestAssertDefaultSlug:
 
 
 class TestServableProfiles:
-    PROFILES = to_profile_rows(
+    MIXED = to_profile_rows(
         [
             *PROFILES,
             page({"Slug": "tasks"}, "Tasks", id="profile-tasks"),
@@ -270,13 +270,13 @@ class TestServableProfiles:
     )
 
     def test_keeps_the_first_profile_with_each_servable_slug(self) -> None:
-        assert [p.id for p in servable_profiles(self.PROFILES)] == [
+        assert [p.id for p in servable_profiles(self.MIXED)] == [
             "profile-shifra",
             "profile-alex",
         ]
 
     def test_names_why_each_other_profile_gets_no_page(self) -> None:
-        assert [(row.title, row.reason) for row in unservable_profiles(self.PROFILES)] == [
+        assert [(row.title, row.reason) for row in unservable_profiles(self.MIXED)] == [
             ("Tasks", 'Slug "tasks" is reserved for the web service'),
             ("Slash", 'Slug "a/b" contains "/"'),
             ("Second Shifra", 'Slug "shifra" is already used by another profile'),

@@ -252,7 +252,8 @@ async def test_keeps_the_newer_snapshot_when_an_older_read_finishes_last() -> No
             await slow_read_done.wait()
         return value
 
-    store = SiteStore(read=read, rebuild=Dispatcher().start)
+    dispatcher = Dispatcher()
+    store = SiteStore(read=read, rebuild=lambda: dispatcher.start("grouplink.rebuild", [{}]))
     slow = asyncio.create_task(store.snapshot())
     await asyncio.sleep(0)
     fast = await store.snapshot()

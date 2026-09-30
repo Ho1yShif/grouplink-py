@@ -57,8 +57,8 @@ MAX_BODY_BYTES = 1_048_576
 RETRY_AFTER_SECONDS = 60
 
 
-class SecurityHeaders:
-    """Headers for every response, plus a one-year cache on the fonts."""
+class ResponseHeaders:
+    """Security headers on every response, plus a one-year cache on the fonts."""
 
     def __init__(self, app: ASGIApp) -> None:
         self._app = app
@@ -147,7 +147,7 @@ def create_app(
             Route("/{slug}", page, methods=["GET"]),
             Route("/{slug}/", page, methods=["GET"]),
         ],
-        middleware=[Middleware(SecurityHeaders)],
+        middleware=[Middleware(ResponseHeaders)],
         lifespan=lifespan,
     )
 
