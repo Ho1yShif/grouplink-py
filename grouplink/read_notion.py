@@ -19,6 +19,7 @@ from grouplink.links import (
     ProfileRow,
     assert_default_slug,
     group_by_profile,
+    servable_profiles,
     to_link_rows,
     to_profile_rows,
     unnumbered_last,
@@ -33,7 +34,8 @@ class NotionSite:
     #: The raw link rows, which the skip report reads.
     link_pages: list[PageDTO]
     profiles: list[ProfileRow]
-    #: One page per profile. Each page holds its visible rows, in `Order`.
+    #: One page per profile, except a profile with a reserved slug. Each page holds
+    #: its visible rows, in `Order`.
     pages: list[ProfilePage]
 
 
@@ -52,7 +54,8 @@ async def read_notion_site(ctx: TaskContext, cfg: RebuildConfig) -> NotionSite:
     )
 
     profiles = to_profile_rows(profile_pages)
-    assert_default_slug(profiles, cfg.default_slug)
-    pages = group_by_profile(visible_rows(unnumbered_last(to_link_rows(link_pages))), profiles)
+    servable = servable_profiles(profiles)
+    assert_default_slug(servable, cfg.default_slug)
+    pages = group_by_profile(visible_rows(unnumbered_last(to_link_rows(link_pages))), servable)
 
     return NotionSite(link_pages=link_pages, profiles=profiles, pages=pages)

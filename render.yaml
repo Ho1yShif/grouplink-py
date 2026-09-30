@@ -73,6 +73,8 @@ projects:
             name: grouplink-cache
             plan: starter
             region: oregon
-            maxmemoryPolicy: allkeys-lru
+            # volatile-lru evicts only keys with a TTL. The scraped metadata has one;
+            # grouplink:site, the published site, does not, so it is never evicted.
+            maxmemoryPolicy: volatile-lru
             # Private network only. The Workflow reaches it over the internal URL.
             ipAllowList: []

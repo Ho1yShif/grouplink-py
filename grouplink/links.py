@@ -223,6 +223,24 @@ def to_profile_rows(pages: list[PageDTO]) -> list[ProfileRow]:
     return rows
 
 
+#: First path segments the web service routes itself, so no profile can use them.
+RESERVED_SLUGS = frozenset({"assets", "healthz", "tasks", "webhooks"})
+
+
+def servable_profiles(profiles: list[ProfileRow]) -> list[ProfileRow]:
+    """The profiles whose slug the web service can serve as a page."""
+    return [profile for profile in profiles if profile.slug not in RESERVED_SLUGS]
+
+
+def reserved_profiles(profiles: list[ProfileRow]) -> list[SkippedRow]:
+    """A profile whose slug is reserved gets no page. Reported with the skipped rows."""
+    return [
+        SkippedRow(profile.name, "", f'Slug "{profile.slug}" is reserved for the web service')
+        for profile in profiles
+        if profile.slug in RESERVED_SLUGS
+    ]
+
+
 def group_by_profile(rows: list[LinkRow], profiles: list[ProfileRow]) -> list[ProfilePage]:
     """One bundle per profile.
 

@@ -1,5 +1,6 @@
 """grouplink.rebuild — read the profiles and their links from Notion, enrich them,
-render one page each, commit the pages that changed, deploy, and say so in Slack.
+write the site to Key Value for the web service, render one page each, commit the
+pages that changed, deploy, and say so in Slack.
 
 Every `await ctx.run(...)` below is a separate durable run on its own instance, with
 that package's retry policy, tracked in the dashboard. The per-URL stages fan out
@@ -11,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any, TypedDict
 
 from render import TaskContext
@@ -39,6 +41,7 @@ from grouplink.links import (
     fetchable_urls,
     meta_cache_key,
     page_paths_for,
+    reserved_profiles,
     skipped_rows,
     to_card,
     unique_urls,
@@ -46,6 +49,7 @@ from grouplink.links import (
 )
 from grouplink.page import PageModel, render_page
 from grouplink.read_notion import read_notion_site
+from grouplink.snapshot import SITE_KEY, build_snapshot, parse_snapshot
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +82,10 @@ class RebuildResult(TypedDict):
     #: Link rows read from Notion that render on no page, and why.
     skipped: list[SkippedRowDTO]
     deadLinks: list[str]
+    #: sha256 of the snapshot's pages and default slug.
+    hash: str
+    #: Whether the run wrote a new snapshot to Key Value.
+    published: bool
     committed: bool
     #: Paths in the commit. Empty when nothing changed.
     changedPaths: list[str]
@@ -160,12 +168,16 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
         if _unreachable(check)
     ]
 
-    # 6) Render one file per profile, plus a second copy of the default profile's page
-    #    at the site root, so `/` and `/<default slug>` serve the same thing.
+    # 6) Build the snapshot the web service serves, and render one file per profile,
+    #    plus a second copy of the default profile's page at the site root, so `/` and
+    #    `/<default slug>` serve the same thing.
+    models = {page.profile.slug: _to_model(page, meta_by_url) for page in pages}
+    snapshot = build_snapshot(models, cfg.default_slug, datetime.now(UTC))
+    snapshot_hash = parse_snapshot(snapshot).hash
     files: list[CommitFilesFileInput] = []
-    for page in pages:
-        content = render_page(_to_model(page, meta_by_url))
-        paths = page_paths_for(cfg.site_dir, page.profile.slug, cfg.default_slug)
+    for slug, model in models.items():
+        content = render_page(model)
+        paths = page_paths_for(cfg.site_dir, slug, cfg.default_slug)
         files.extend({"path": path, "content": content} for path in paths)
 
     result: RebuildResult = {
@@ -174,6 +186,8 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
         "cacheHits": len(web_urls) - len(miss_urls),
         "skipped": [_to_skipped_dto(row) for row in skipped],
         "deadLinks": dead_links,
+        "hash": snapshot_hash,
+        "published": False,
         "committed": False,
         "changedPaths": [],
         "commitSha": None,
@@ -187,7 +201,15 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
         return result
     assert_writable(cfg)
 
-    # 7) Chained run, then a batched fan-out: compare each page against what the
+    # 7) Chained runs: read the published snapshot, and write the new one only when
+    #    its hash differs. One SET, so a reader never sees half of a rebuild. No TTL,
+    #    so Key Value never evicts it.
+    current = await ctx.run(kv_get, {"key": SITE_KEY})
+    if _snapshot_hash(current.get("value")) != snapshot_hash:
+        await ctx.run(kv_set, {"key": SITE_KEY, "value": snapshot})
+        result["published"] = True
+
+    # 8) Chained run, then a batched fan-out: compare each page against what the
     #    branch already holds, so a quiet day produces no commit and no deploy.
     #    listTree comes first because getFileContents throws a 404 on a path that
     #    doesn't exist yet, and a new profile's page never does.
@@ -216,7 +238,7 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
             )
         return result
 
-    # 8) Chained run: every changed page in one commit, so one deploy covers them all.
+    # 9) Chained run: every changed page in one commit, so one deploy covers them all.
     commit = await ctx.run(
         commit_files,
         {
@@ -230,14 +252,14 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
     result["committed"] = True
     result["commitSha"] = commit["commitSha"]
 
-    # 9) Chained runs: deploy the static site and wait for it to go live.
+    # 10) Chained runs: deploy the static site and wait for it to go live.
     deploy = await ctx.run(
         trigger_deploy, {"serviceId": cfg.static_site_id, "commitId": commit["commitSha"]}
     )
     result["deployId"] = deploy["deployId"]
     await ctx.run(await_deploy, {"serviceId": cfg.static_site_id, "deployId": deploy["deployId"]})
 
-    # 10) Chained run: post the outcome.
+    # 11) Chained run: post the outcome.
     await _notify(
         ctx,
         f"grouplink is live with {len(card_urls)} links across {len(pages)} pages. {cfg.site_url}",
@@ -253,7 +275,7 @@ def _report_notion_problems(
     reaches no page, and an Icon option no file matches. Both are otherwise silent.
     Returns the skipped rows, which the run reports as part of its result.
     """
-    skipped = skipped_rows(link_pages, profiles)
+    skipped = skipped_rows(link_pages, profiles) + reserved_profiles(profiles)
     for row in skipped:
         log.info('skipped "%s": %s', row.title, row.reason)
     for name in unknown_icons(link_pages):
@@ -273,6 +295,16 @@ def _unreachable(check: Mapping[str, Any] | None) -> bool:
     if not check:
         return True
     return not check["ok"] and int(check["status"]) not in REFUSED_STATUSES
+
+
+def _snapshot_hash(value: str | None) -> str | None:
+    """The hash of the published snapshot. None when there is none this build can read."""
+    if not value:
+        return None
+    try:
+        return parse_snapshot(value).hash
+    except ValueError:
+        return None
 
 
 def _read_cached(value: str | None) -> CachedMeta | None:

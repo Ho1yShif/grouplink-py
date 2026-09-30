@@ -44,6 +44,7 @@ from render_lab_tasks_slack.post_message import post_message_impl
 
 from grouplink.links import LINK_SORTS
 from grouplink.rebuild import rebuild
+from grouplink.snapshot import SITE_KEY, Snapshot, parse_snapshot
 
 ENV = {
     "NOTION_LINKS_DATABASE_ID": "db_links",
@@ -156,6 +157,10 @@ class Fakes:
     on_branch: list[str] | None = None
     #: Raw link rows, when a case needs more or fewer than LINK_PAGES.
     links: list[dict[str, Any]] | None = None
+    #: Raw profile rows, when a case needs more or fewer than PROFILE_PAGES.
+    profiles: list[dict[str, Any]] | None = None
+    #: The snapshot Key Value already holds.
+    site: str | None = None
 
 
 class Harness:
@@ -171,6 +176,8 @@ class Harness:
         self.deploys: list[dict[str, Any]] = []
         self.slack_posts: list[dict[str, Any]] = []
         self.kv = FakeKv({f"gl:meta:v1:{url}": value for url, value in fakes.cache.items()})
+        if fakes.site is not None:
+            self.kv._cache[SITE_KEY] = fakes.site
         self._in_flight = 0
         self.peak_in_flight = 0
         self._http = httpx.AsyncClient(transport=httpx.MockTransport(self._route))
@@ -200,11 +207,10 @@ class Harness:
         if path.startswith("/v1/data_sources/") and path.endswith("/query"):
             source = path.split("/")[3]
             self.notion_queries[source] = json.loads(request.content) if request.content else {}
-            rows = (
-                PROFILE_PAGES
-                if source == "ds-db_profiles"
-                else (self.fakes.links if self.fakes.links is not None else LINK_PAGES)
-            )
+            if source == "ds-db_profiles":
+                rows = self.fakes.profiles if self.fakes.profiles is not None else PROFILE_PAGES
+            else:
+                rows = self.fakes.links if self.fakes.links is not None else LINK_PAGES
             return httpx.Response(
                 200, json={"results": rows, "has_more": False, "next_cursor": None}
             )
@@ -348,6 +354,16 @@ class Harness:
         if not self.trees:
             return {}
         return {entry["path"]: self.blobs[i] for i, entry in enumerate(self.trees[-1])}
+
+    def site_sets(self) -> list[dict[str, Any]]:
+        return [entry for entry in self.kv.sets if entry["key"] == SITE_KEY]
+
+    def meta_sets(self) -> list[dict[str, Any]]:
+        return [entry for entry in self.kv.sets if entry["key"] != SITE_KEY]
+
+    def snapshot(self) -> Snapshot:
+        """The snapshot the last run wrote to Key Value."""
+        return parse_snapshot(self.site_sets()[-1]["value"])
 
     def committed_html(self) -> str:
         """The root page's HTML."""
@@ -575,8 +591,8 @@ class TestRebuild:
     async def test_caches_every_fresh_scrape_with_a_ttl(self, env: Any) -> None:
         h = harness()
         await rebuild.func(h.ctx, {})
-        assert len(h.kv.sets) == 3
-        assert h.kv.sets[0]["ttlSeconds"] == 604_800
+        assert len(h.meta_sets()) == 3
+        assert h.meta_sets()[0]["ttlSeconds"] == 604_800
 
     async def test_writes_the_cache_in_the_same_json_shape_as_typescript(self, env: Any) -> None:
         h = harness()
@@ -676,6 +692,57 @@ class TestRebuild:
         assert len(h.slack_posts) == 1
         assert "grouplink.rebuild failed" in h.slack_posts[0]["text"]
 
+    async def test_writes_the_site_to_key_value_once_with_no_ttl(self, env: Any) -> None:
+        h = harness()
+        result = await rebuild.func(h.ctx, {})
+
+        assert len(h.site_sets()) == 1
+        assert h.site_sets()[0].get("ttlSeconds") is None
+        snapshot = h.snapshot()
+        assert snapshot.default_slug == "shifra"
+        assert list(snapshot.pages) == ["shifra", "alex"]
+        assert snapshot.pages["alex"].name == "Alex Rivera"
+        assert [card.title for card in snapshot.pages["shifra"].cards] == ["Discord", "Startups"]
+        assert (
+            snapshot.pages["shifra"].cards[0].description == "desc for https://discord.com/invite/x"
+        )
+        assert result["published"] is True
+        assert result["hash"] == snapshot.hash
+
+    async def test_skips_the_site_write_when_the_hash_matches(self, env: Any) -> None:
+        first = harness()
+        await rebuild.func(first.ctx, {})
+
+        second = harness(site=first.site_sets()[0]["value"])
+        result = await rebuild.func(second.ctx, {})
+
+        assert second.site_sets() == []
+        assert result["published"] is False
+        assert result["hash"] == first.snapshot().hash
+
+    async def test_overwrites_a_site_value_it_cannot_read(self, env: Any) -> None:
+        h = harness(site="not json")
+        result = await rebuild.func(h.ctx, {})
+
+        assert len(h.site_sets()) == 1
+        assert result["published"] is True
+
+    async def test_skips_and_reports_a_profile_with_a_reserved_slug(self, env: Any) -> None:
+        h = harness(
+            profiles=[
+                *PROFILE_PAGES,
+                raw_profile("profile-assets", "Assets", "assets", "Not a person."),
+            ]
+        )
+        result = await rebuild.func(h.ctx, {})
+
+        assert "assets" not in h.snapshot().pages
+        assert {
+            "title": "Assets",
+            "url": "",
+            "reason": 'Slug "assets" is reserved for the web service',
+        } in result["skipped"]
+
     async def test_writes_nothing_on_a_dry_run(self, env: Any) -> None:
         env(DRY_RUN="true")
         h = harness()
@@ -686,3 +753,5 @@ class TestRebuild:
         assert result["linkCount"] == 3
         assert h.commits == []
         assert h.slack_posts == []
+        assert h.site_sets() == []
+        assert result["published"] is False
