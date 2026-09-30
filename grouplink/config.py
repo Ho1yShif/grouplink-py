@@ -26,22 +26,16 @@ class RebuildConfig:
     #: Notion database holding one row per profile: Name, Slug, Tagline.
     profiles_database_id: str
     limit: int
-    #: Skips the commit, the deploy, and the Slack post.
+    #: Skips the site write to Key Value and the Slack post.
     dry_run: bool
 
-    #: Slug of the profile the root page renders. Its page is written twice.
+    #: Slug of the profile the root page shows.
     default_slug: str
 
     #: Seconds a scraped metadata record stays in Key Value.
     cache_ttl_seconds: int
 
-    repo_owner: str
-    repo_name: str
-    branch: str
-    #: Directory the pages are committed under, without a trailing slash.
-    site_dir: str
-
-    static_site_id: str
+    #: Public URL of the page, for the Slack message.
     site_url: str
 
 
@@ -49,7 +43,7 @@ FALSY = {"false", "0", "no", "off"}
 
 
 def env_flag(value: str | None, fallback: bool) -> bool:
-    """Case-insensitive, because DRY_RUN guards the commit, the deploy, and the Slack
+    """Case-insensitive, because DRY_RUN guards the site write and the Slack
     post — reading `False` as true would publish a run the operator meant to hold.
     """
     normalized = (value or "").strip().lower()
@@ -111,29 +105,5 @@ def load_config(
         cache_ttl_seconds=env_int(
             "METADATA_TTL_SECONDS", environ.get("METADATA_TTL_SECONDS"), 604_800
         ),
-        repo_owner=environ.get("GITHUB_REPO_OWNER", ""),
-        repo_name=environ.get("GITHUB_REPO_NAME", ""),
-        branch=environ.get("GITHUB_BRANCH", "main"),
-        site_dir=environ.get("SITE_DIR", "site").rstrip("/"),
-        static_site_id=environ.get("RENDER_STATIC_SITE_ID", ""),
         site_url=environ.get("SITE_URL", ""),
     )
-
-
-def assert_writable(cfg: RebuildConfig) -> None:
-    """The write path needs more than the read path does.
-
-    Called only when the run is about to commit, so a dry run works with just a Notion
-    token and a Key Value URL.
-    """
-    missing = [
-        name
-        for name, value in (
-            ("GITHUB_REPO_OWNER", cfg.repo_owner),
-            ("GITHUB_REPO_NAME", cfg.repo_name),
-            ("RENDER_STATIC_SITE_ID", cfg.static_site_id),
-        )
-        if not value
-    ]
-    if missing:
-        raise ValueError(f"set {', '.join(missing)}, or run with dryRun: true")

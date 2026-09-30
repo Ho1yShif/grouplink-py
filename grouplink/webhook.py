@@ -41,7 +41,7 @@ from grouplink.snapshot import SITE_KEY
 
 log = logging.getLogger(__name__)
 
-ASSETS_DIR = Path(__file__).resolve().parent.parent / "site" / "assets"
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
 NOT_FOUND_HTML = (
     '<!doctype html><html lang="en"><head><meta charset="utf-8">'
@@ -54,7 +54,7 @@ RETRY_AFTER_SECONDS = 60
 
 
 class SecurityHeaders:
-    """The headers the static site's Blueprint entry set, on every response."""
+    """Headers for every response, plus a one-year cache on the fonts."""
 
     def __init__(self, app: ASGIApp) -> None:
         self._app = app

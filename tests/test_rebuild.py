@@ -3,7 +3,7 @@ ctx.run to the owning pack's *_impl with a fake injected at the vendor port. No
 network and no secrets, but the pack code, the DTO mapping, the relation shim, and
 the composition in grouplink/rebuild.py are all real.
 
-The vendor port for six of the seven packs is an httpx.AsyncClient, so the fake goes
+The vendor port for four of the five packs is an httpx.AsyncClient, so the fake goes
 in as an httpx.MockTransport and the pack's own request building, pagination, and DTO
 mapping all run. Key Value talks to redis instead, so that one gets a port fake.
 """
@@ -11,7 +11,6 @@ mapping all run. Key Value talks to redis instead, so that one gets a port fake.
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -19,20 +18,12 @@ from typing import Any
 
 import httpx
 import pytest
-from render_lab_tasks_github.client import GitHubClient, GitHubDeps
-from render_lab_tasks_github.commit_files import commit_files_impl
-from render_lab_tasks_github.get_file_contents import get_file_contents_impl
-from render_lab_tasks_github.list_tree import list_tree_impl
 from render_lab_tasks_http.client import Client as HttpPackClient
 from render_lab_tasks_http.client import Deps as HttpDeps
 from render_lab_tasks_http.request import request_impl
 from render_lab_tasks_notion.client import Client as NotionPackClient
 from render_lab_tasks_notion.client import Deps as NotionDeps
 from render_lab_tasks_notion.query_database import query_database_impl
-from render_lab_tasks_render.await_deploy import await_deploy_impl
-from render_lab_tasks_render.client import Client as RenderPackClient
-from render_lab_tasks_render.client import Deps as RenderDeps
-from render_lab_tasks_render.trigger_deploy import trigger_deploy_impl
 from render_lab_tasks_render_kv.client import Deps as KvDeps
 from render_lab_tasks_render_kv.get import get_impl as kv_get_impl
 from render_lab_tasks_render_kv.set import set_impl as kv_set_impl
@@ -43,6 +34,7 @@ from render_lab_tasks_slack.client import SlackDeps, SlackWebhook
 from render_lab_tasks_slack.post_message import post_message_impl
 
 from grouplink.links import LINK_SORTS
+from grouplink.page import render_page
 from grouplink.rebuild import rebuild
 from grouplink.snapshot import SITE_KEY, Snapshot, parse_snapshot
 
@@ -50,13 +42,8 @@ ENV = {
     "NOTION_LINKS_DATABASE_ID": "db_links",
     "NOTION_PROFILES_DATABASE_ID": "db_profiles",
     "SITE_DEFAULT_SLUG": "shifra",
-    "GITHUB_REPO_OWNER": "acme",
-    "GITHUB_REPO_NAME": "grouplink",
-    "RENDER_STATIC_SITE_ID": "srv-1",
     "SITE_URL": "https://grouplink.onrender.com",
     "NOTION_TOKEN": "notion-token",
-    "GITHUB_TOKEN": "github-token",
-    "RENDER_API_KEY": "render-key",
     "SLACK_WEBHOOK_URL": "https://hooks.slack.test/services/T/B/x",
     "DRY_RUN": "false",
 }
@@ -151,10 +138,6 @@ class Fakes:
     cache: dict[str, str] = field(default_factory=dict)
     #: URL -> status, for http.request. Defaults to 200.
     statuses: dict[str, int] = field(default_factory=dict)
-    #: Path -> contents already on the branch. Its keys are the default tree.
-    current: dict[str, str] = field(default_factory=dict)
-    #: Paths github.listTree reports, when they differ from `current`'s keys.
-    on_branch: list[str] | None = None
     #: Raw link rows, when a case needs more or fewer than LINK_PAGES.
     links: list[dict[str, Any]] | None = None
     #: Raw profile rows, when a case needs more or fewer than PROFILE_PAGES.
@@ -170,10 +153,8 @@ class Harness:
         self.checked: list[str] = []
         #: Data source id -> the body of its Notion query.
         self.notion_queries: dict[str, dict[str, Any]] = {}
-        self.blobs: list[str] = []
-        self.trees: list[list[dict[str, Any]]] = []
-        self.commits: list[dict[str, Any]] = []
-        self.deploys: list[dict[str, Any]] = []
+        #: Name of every task the run dispatched, in order.
+        self.tasks: list[str] = []
         self.slack_posts: list[dict[str, Any]] = []
         self.kv = FakeKv({f"gl:meta:v1:{url}": value for url, value in fakes.cache.items()})
         if fakes.site is not None:
@@ -189,10 +170,6 @@ class Harness:
         handler = (
             self._notion
             if url.host == "api.notion.com"
-            else self._github
-            if url.host == "api.github.com"
-            else self._render_api
-            if url.host == "api.render.com"
             else self._slack
             if url.host == "hooks.slack.test"
             else self._link_site
@@ -215,62 +192,6 @@ class Harness:
                 200, json={"results": rows, "has_more": False, "next_cursor": None}
             )
         raise AssertionError(f"no fake for Notion {request.method} {path}")
-
-    def _github(self, request: httpx.Request) -> httpx.Response:
-        path = request.url.path.removeprefix("/repos/acme/grouplink")
-        body = json.loads(request.content) if request.content else {}
-
-        if path.startswith("/git/trees/") and request.method == "GET":
-            paths = (
-                self.fakes.on_branch
-                if self.fakes.on_branch is not None
-                else list(self.fakes.current)
-            )
-            return httpx.Response(
-                200,
-                json={
-                    "tree": [{"path": p, "type": "blob"} for p in paths],
-                    "truncated": False,
-                },
-            )
-        if path.startswith("/contents/"):
-            file_path = path.removeprefix("/contents/")
-            content = self.fakes.current.get(file_path, "<html>stale</html>")
-            return httpx.Response(
-                200,
-                json={
-                    "type": "file",
-                    "path": file_path,
-                    "content": base64.b64encode(content.encode()).decode(),
-                    "encoding": "base64",
-                    "sha": "sha1",
-                },
-            )
-        if path == "/git/ref/heads/main":
-            return httpx.Response(200, json={"object": {"sha": "head1"}})
-        if path == "/git/commits/head1":
-            return httpx.Response(200, json={"tree": {"sha": "tree0"}})
-        if path == "/git/blobs" and request.method == "POST":
-            self.blobs.append(body["content"])
-            return httpx.Response(201, json={"sha": f"blob{len(self.blobs)}"})
-        if path == "/git/trees" and request.method == "POST":
-            self.trees.append(body["tree"])
-            return httpx.Response(201, json={"sha": "tree1"})
-        if path == "/git/commits" and request.method == "POST":
-            self.commits.append(body)
-            return httpx.Response(201, json={"sha": "commit1"})
-        if path == "/git/refs/heads/main" and request.method == "PATCH":
-            return httpx.Response(200, json={"object": {"sha": body["sha"]}})
-        raise AssertionError(f"no fake for GitHub {request.method} {path}")
-
-    def _render_api(self, request: httpx.Request) -> httpx.Response:
-        path = request.url.path
-        if path == "/v1/services/srv-1/deploys" and request.method == "POST":
-            self.deploys.append(json.loads(request.content))
-            return httpx.Response(201, json={"id": "dep-1", "status": "created"})
-        if path == "/v1/services/srv-1/deploys/dep-1":
-            return httpx.Response(200, json={"id": "dep-1", "status": "live"})
-        raise AssertionError(f"no fake for the Render API {request.method} {path}")
 
     def _slack(self, request: httpx.Request) -> httpx.Response:
         self.slack_posts.append(json.loads(request.content))
@@ -323,37 +244,17 @@ class Harness:
             "kv.get": lambda a: kv_get_impl(self.ctx, a, deps=KvDeps(render_kv=self.kv)),
             "kv.set": lambda a: kv_set_impl(self.ctx, a, deps=KvDeps(render_kv=self.kv)),
             "http.request": self._check,
-            "github.listTree": lambda a: list_tree_impl(
-                self.ctx, a, deps=GitHubDeps(github=GitHubClient(self._http, env=ENV))
-            ),
-            "github.getFileContents": lambda a: get_file_contents_impl(
-                self.ctx, a, deps=GitHubDeps(github=GitHubClient(self._http, env=ENV))
-            ),
-            "github.commitFiles": lambda a: commit_files_impl(
-                self.ctx, a, deps=GitHubDeps(github=GitHubClient(self._http, env=ENV))
-            ),
-            "render.triggerDeploy": lambda a: trigger_deploy_impl(
-                self.ctx, a, deps=RenderDeps(render=RenderPackClient(self._http, env=ENV))
-            ),
-            "render.awaitDeploy": lambda a: await_deploy_impl(
-                self.ctx, a, deps=RenderDeps(render=RenderPackClient(self._http, env=ENV))
-            ),
             "slack.postMessage": lambda a: post_message_impl(
                 self.ctx, a, deps=SlackDeps(slack=SlackWebhook(self._http, env=ENV))
             ),
         }
+        self.tasks.append(task.name)
         route = routes.get(task.name)
         if route is None:
             raise AssertionError(f'no fake for ctx.run("{task.name}")')
         return await route(args[0] if args else {})
 
     # --- what the run wrote ---
-
-    def committed(self) -> dict[str, str]:
-        """Path -> HTML handed to github.commitFiles on the last run."""
-        if not self.trees:
-            return {}
-        return {entry["path"]: self.blobs[i] for i, entry in enumerate(self.trees[-1])}
 
     def site_sets(self) -> list[dict[str, Any]]:
         return [entry for entry in self.kv.sets if entry["key"] == SITE_KEY]
@@ -365,9 +266,9 @@ class Harness:
         """The snapshot the last run wrote to Key Value."""
         return parse_snapshot(self.site_sets()[-1]["value"])
 
-    def committed_html(self) -> str:
-        """The root page's HTML."""
-        return self.committed().get("site/index.html", "")
+    def html(self, slug: str = "shifra") -> str:
+        """One profile's page, rendered from the snapshot the last run wrote."""
+        return render_page(self.snapshot().pages[slug], 2026)
 
 
 @pytest.fixture
@@ -392,7 +293,7 @@ class TestRebuild:
         assert result["pageCount"] == 2
         assert result["linkCount"] == 3
 
-        html = h.committed_html()
+        html = h.html()
         assert html.index("Discord") < html.index("Startups")
         assert "Hidden" not in html
         assert "render.com/secret" not in html
@@ -422,27 +323,25 @@ class TestRebuild:
             ]
         )
         await rebuild.func(h.ctx, {})
-        files = h.committed()
 
-        shifra = files["site/shifra/index.html"]
+        shifra = h.html("shifra")
         assert shifra.index("Docs") < shifra.index("Mine") < shifra.index("Blog")
 
-        alex = files["site/alex/index.html"]
+        alex = h.html("alex")
         assert "Mine" not in alex
         assert alex.index("Docs") < alex.index("Blog")
 
     async def test_puts_a_profiles_links_in_its_own_file_and_nobody_elses(self, env: Any) -> None:
         h = harness()
         await rebuild.func(h.ctx, {})
-        files = h.committed()
 
-        assert "Startups" in files["site/shifra/index.html"]
-        assert "Alex only" not in files["site/shifra/index.html"]
-        assert "Alex only" in files["site/alex/index.html"]
-        assert "Startups" not in files["site/alex/index.html"]
+        assert "Startups" in h.html("shifra")
+        assert "Alex only" not in h.html("shifra")
+        assert "Alex only" in h.html("alex")
+        assert "Startups" not in h.html("alex")
         # The shared link is on both.
-        assert "Discord" in files["site/shifra/index.html"]
-        assert "Discord" in files["site/alex/index.html"]
+        assert "Discord" in h.html("shifra")
+        assert "Discord" in h.html("alex")
 
     async def test_puts_an_everyone_link_on_every_page(self, env: Any) -> None:
         h = harness(
@@ -452,10 +351,9 @@ class TestRebuild:
             ]
         )
         await rebuild.func(h.ctx, {})
-        files = h.committed()
 
-        assert "Careers" in files["site/shifra/index.html"]
-        assert "Careers" in files["site/alex/index.html"]
+        assert "Careers" in h.html("shifra")
+        assert "Careers" in h.html("alex")
 
     async def test_scrapes_an_everyone_link_once_not_once_per_page(self, env: Any) -> None:
         h = harness(
@@ -471,11 +369,10 @@ class TestRebuild:
     async def test_gives_each_page_its_own_name_and_tagline(self, env: Any) -> None:
         h = harness()
         await rebuild.func(h.ctx, {})
-        files = h.committed()
 
-        assert "Developer relations at Render." in files["site/shifra/index.html"]
-        assert "Alex Rivera" in files["site/alex/index.html"]
-        assert "Shifra Williams" not in files["site/alex/index.html"]
+        assert "Developer relations at Render." in h.html("shifra")
+        assert "Alex Rivera" in h.html("alex")
+        assert "Shifra Williams" not in h.html("alex")
 
     async def test_reports_why_a_row_renders_on_no_page(self, env: Any) -> None:
         h = harness(
@@ -507,7 +404,7 @@ class TestRebuild:
         assert "render.com/careers" not in h.checked
         assert "https://render.com/careers" in h.scraped
         assert "https://render.com/careers" in h.checked
-        assert "Bare host" in h.committed_html()
+        assert "Bare host" in h.html()
 
     async def test_never_fetches_a_url_httpx_refuses(self, env: Any) -> None:
         """httpx refuses a URL with no usable scheme, so before this check one bad Notion
@@ -518,7 +415,7 @@ class TestRebuild:
 
         assert "javascript:alert(1)" not in h.scraped
         assert "javascript:alert(1)" not in h.checked
-        assert "Script" not in h.committed_html()
+        assert "Script" not in h.html()
 
     async def test_renders_a_mailto_row_without_scraping_or_checking_it(self, env: Any) -> None:
         address = "mailto:shifra@render.com"
@@ -529,16 +426,9 @@ class TestRebuild:
         assert address not in h.checked
         assert [row["title"] for row in result["skipped"]] == ["Hidden"]
 
-        html = h.committed().get("site/shifra/index.html", "")
+        html = h.html("shifra")
         assert f'href="{address}"' in html
         assert f'<span class="card__target">{address}</span>' in html
-
-    async def test_serves_the_default_profile_at_the_root_byte_for_byte(self, env: Any) -> None:
-        h = harness()
-        await rebuild.func(h.ctx, {})
-        files = h.committed()
-
-        assert files["site/index.html"] == files["site/shifra/index.html"]
 
     async def test_refuses_to_run_when_the_default_slug_matches_nobody(self, env: Any) -> None:
         env(SITE_DEFAULT_SLUG="nobody")
@@ -558,7 +448,7 @@ class TestRebuild:
         h = harness()
         await rebuild.func(h.ctx, {})
 
-        html = h.committed().get("site/alex/index.html", "")
+        html = h.html("alex")
         assert 'href="/assets/render-logomark-black.svg"' in html
         assert "url('/assets/render-logo-white.png')" in html
         assert "url('/assets/icons/github.svg')" in html
@@ -568,12 +458,12 @@ class TestRebuild:
     async def test_carries_the_scraped_description_onto_the_card(self, env: Any) -> None:
         h = harness()
         await rebuild.func(h.ctx, {})
-        assert "desc for https://discord.com/invite/x" in h.committed_html()
+        assert "desc for https://discord.com/invite/x" in h.html()
 
     async def test_links_to_the_notion_url_untouched(self, env: Any) -> None:
         h = harness()
         await rebuild.func(h.ctx, {})
-        html = h.committed_html()
+        html = h.html()
         assert 'href="https://render.com/startups"' in html
         assert 'href="https://discord.com/invite/x"' in html
         assert "utm_" not in html
@@ -586,7 +476,7 @@ class TestRebuild:
 
         assert result["cacheHits"] == 1
         assert len(h.scraped) == 2
-        assert "cached blurb" in h.committed_html()
+        assert "cached blurb" in h.html()
 
     async def test_caches_every_fresh_scrape_with_a_ttl(self, env: Any) -> None:
         h = harness()
@@ -612,67 +502,43 @@ class TestRebuild:
         result = await rebuild.func(h.ctx, {})
         assert result["deadLinks"] == []
 
-    async def test_commits_every_page_once_deploys_and_posts(self, env: Any) -> None:
+    async def test_publishes_and_posts_that_the_site_is_live(self, env: Any) -> None:
         h = harness()
         result = await rebuild.func(h.ctx, {})
 
-        assert result["committed"] is True
-        assert result["changedPaths"] == [
-            "site/shifra/index.html",
-            "site/index.html",
-            "site/alex/index.html",
-        ]
-        assert result["commitSha"] == "commit1"
-        assert result["deployId"] == "dep-1"
-        assert len(h.commits) == 1
-        assert len(h.deploys) == 1
+        assert result["published"] is True
         assert len(h.slack_posts) == 1
+        assert "grouplink is live with 3 links across 2 pages." in h.slack_posts[0]["text"]
 
-    async def test_leaves_an_unchanged_page_out_of_the_commit(self, env: Any) -> None:
+    async def test_never_calls_github_or_the_render_api(self, env: Any) -> None:
+        h = harness()
+        result = await rebuild.func(h.ctx, {})
+
+        assert not [task for task in h.tasks if task.startswith(("github.", "render."))]
+        assert not {"committed", "commitSha", "deployId", "changedPaths"} & result.keys()
+
+    async def test_posts_nothing_when_the_site_is_unchanged(self, env: Any) -> None:
         first = harness()
         await rebuild.func(first.ctx, {})
-        rendered = first.committed()
 
-        # Alex's page is already on the branch and unchanged; Shifra's is stale.
+        second = harness(site=first.site_sets()[0]["value"])
+        result = await rebuild.func(second.ctx, {})
+
+        assert result["published"] is False
+        assert second.slack_posts == []
+
+    async def test_posts_dead_links_even_when_the_site_is_unchanged(self, env: Any) -> None:
+        first = harness(statuses={"https://render.com/startups": 404})
+        await rebuild.func(first.ctx, {})
+
         second = harness(
-            current={
-                "site/alex/index.html": rendered["site/alex/index.html"],
-                "site/shifra/index.html": "<html>old</html>",
-                "site/index.html": "<html>old</html>",
-            }
+            site=first.site_sets()[0]["value"], statuses={"https://render.com/startups": 404}
         )
-        result = await rebuild.func(second.ctx, {})
+        await rebuild.func(second.ctx, {})
 
-        assert result["changedPaths"] == ["site/shifra/index.html", "site/index.html"]
-        assert "site/alex/index.html" not in second.committed()
-
-    async def test_skips_the_commit_when_nothing_changed(self, env: Any) -> None:
-        first = harness()
-        await rebuild.func(first.ctx, {})
-
-        second = harness(current=first.committed())
-        result = await rebuild.func(second.ctx, {})
-
-        assert result["committed"] is False
-        assert result["changedPaths"] == []
-        assert second.commits == []
-        assert second.deploys == []
-
-    async def test_commits_a_brand_new_profiles_page(self, env: Any) -> None:
-        first = harness()
-        await rebuild.func(first.ctx, {})
-        rendered = first.committed()
-
-        # Everything is current except alex, whose file has never been committed.
-        second = harness(
-            current={
-                "site/shifra/index.html": rendered["site/shifra/index.html"],
-                "site/index.html": rendered["site/index.html"],
-            }
-        )
-        result = await rebuild.func(second.ctx, {})
-
-        assert result["changedPaths"] == ["site/alex/index.html"]
+        assert len(second.slack_posts) == 1
+        assert "unchanged" in second.slack_posts[0]["text"]
+        assert "https://render.com/startups (404)" in second.slack_posts[0]["text"]
 
     async def test_scrapes_in_batches_instead_of_one_run_per_link(self, env: Any) -> None:
         links = [raw_page(f"Link {i}", f"https://example.com/{i}", i) for i in range(25)]
@@ -749,9 +615,7 @@ class TestRebuild:
         result = await rebuild.func(h.ctx, {})
 
         assert result["dryRun"] is True
-        assert result["committed"] is False
         assert result["linkCount"] == 3
-        assert h.commits == []
         assert h.slack_posts == []
         assert h.site_sets() == []
         assert result["published"] is False

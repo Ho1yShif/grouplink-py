@@ -23,7 +23,7 @@ class LinkRow:
     everyone: bool
     #: Notion page ids of the Profiles rows this link belongs to.
     profile_ids: list[str]
-    #: Which file under site/assets/link-icons the card draws.
+    #: Which file under grouplink/assets/link-icons the card draws.
     icon: IconName
     #: The `Order` cell. None when the cell is empty or holds no number.
     order: float | None
@@ -265,23 +265,6 @@ def unique_urls(rows: list[LinkRow]) -> list[str]:
 def fetchable_urls(urls: list[str]) -> list[str]:
     """The URLs worth scraping and health-checking. A mailto: link has no page."""
     return [url for url in urls if is_http_url(url)]
-
-
-def page_path(site_dir: str, slug: str) -> str:
-    """The default profile is the root page; every other profile lives under its slug."""
-    return f"{site_dir}/{slug}/index.html" if slug else f"{site_dir}/index.html"
-
-
-def page_paths_for(site_dir: str, slug: str, default_slug: str) -> list[str]:
-    """Every path one profile's page is written to.
-
-    The default profile gets a second copy at the site root, so `/` and
-    `/<default slug>` serve the same bytes.
-    """
-    paths = [page_path(site_dir, slug)]
-    if slug == default_slug:
-        paths.append(page_path(site_dir, ""))
-    return paths
 
 
 def assert_default_slug(profiles: list[ProfileRow], default_slug: str) -> None:

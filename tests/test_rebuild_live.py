@@ -2,7 +2,7 @@
 
 Requires NOTION_TOKEN, NOTION_LINKS_DATABASE_ID, NOTION_PROFILES_DATABASE_ID,
 SITE_DEFAULT_SLUG, and REDIS_URL. Runs in dry-run, so it reads Notion, scrapes,
-caches, and health-checks without committing or deploying anything.
+caches, and health-checks without publishing anything.
 
 Run it with `RUN_LIVE=1 uv run pytest tests/test_rebuild_live.py --enable-socket`.
 """
@@ -30,7 +30,7 @@ async def test_reads_the_real_notion_database_and_enriches_every_link() -> None:
     result = await rebuild.func(local_ctx(), {"dryRun": True})
 
     assert result["dryRun"] is True
-    assert result["committed"] is False
+    assert result["published"] is False
     assert result["linkCount"] > 0
     assert result["deadLinks"] == [], "every link should resolve"
 

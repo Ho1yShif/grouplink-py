@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from grouplink.config import assert_writable, env_int, load_config
+from grouplink.config import env_int, load_config
 
 ENV = {
     "NOTION_LINKS_DATABASE_ID": "db_links",
@@ -37,10 +37,8 @@ class TestLoadConfig:
         cfg = load_config({"dryRun": False}, {**ENV, "DRY_RUN": "true"})
         assert cfg.dry_run is False
 
-    def test_lowercases_the_slug_and_strips_trailing_slashes_from_the_site_dir(self) -> None:
-        cfg = load(SITE_DEFAULT_SLUG=" Shifra ", SITE_DIR="site///")
-        assert cfg.default_slug == "shifra"
-        assert cfg.site_dir == "site"
+    def test_lowercases_and_trims_the_default_slug(self) -> None:
+        assert load(SITE_DEFAULT_SLUG=" Shifra ").default_slug == "shifra"
 
     def test_reads_the_limit_from_the_env(self) -> None:
         assert load(LINKS_LIMIT="25").limit == 25
@@ -56,23 +54,6 @@ class TestLoadConfig:
             load_config({}, {"NOTION_LINKS_DATABASE_ID": "x"})
         with pytest.raises(ValueError, match="SITE_DEFAULT_SLUG"):
             load_config({}, {**ENV, "SITE_DEFAULT_SLUG": ""})
-
-
-class TestAssertWritable:
-    WRITE_ENV = {
-        "GITHUB_REPO_OWNER": "acme",
-        "GITHUB_REPO_NAME": "links",
-        "RENDER_STATIC_SITE_ID": "srv-1",
-    }
-
-    def test_passes_once_the_write_path_is_configured(self) -> None:
-        assert_writable(load(**self.WRITE_ENV))
-
-    def test_names_every_variable_a_commit_would_need(self) -> None:
-        with pytest.raises(
-            ValueError, match="GITHUB_REPO_OWNER, GITHUB_REPO_NAME, RENDER_STATIC_SITE_ID"
-        ):
-            assert_writable(load())
 
 
 class TestEnvInt:

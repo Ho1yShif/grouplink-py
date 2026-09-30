@@ -1,6 +1,5 @@
 """grouplink.rebuild — read the profiles and their links from Notion, enrich them,
-write the site to Key Value for the web service, render one page each, commit the
-pages that changed, deploy, and say so in Slack.
+write the site to Key Value for the web service to serve, and say so in Slack.
 
 Every `await ctx.run(...)` below is a separate durable run on its own instance, with
 that package's retry policy, tracked in the dashboard. The per-URL stages fan out
@@ -16,14 +15,8 @@ from datetime import UTC, datetime
 from typing import Any, TypedDict
 
 from render import TaskContext
-from render_lab_tasks_github.commit_files import commit_files
-from render_lab_tasks_github.get_file_contents import get_file_contents
-from render_lab_tasks_github.list_tree import list_tree
-from render_lab_tasks_github.types import CommitFilesFileInput
 from render_lab_tasks_http.request import request
 from render_lab_tasks_notion.types import PageDTO
-from render_lab_tasks_render.await_deploy import await_deploy
-from render_lab_tasks_render.trigger_deploy import trigger_deploy
 from render_lab_tasks_render_kv.get import get as kv_get
 from render_lab_tasks_render_kv.set import set as kv_set
 from render_lab_tasks_scrape.extract_metadata import extract_metadata
@@ -31,7 +24,7 @@ from render_lab_tasks_slack.post_message import post_message
 
 from grouplink.app import app
 from grouplink.batch import map_in_batches
-from grouplink.config import RebuildInput, assert_writable, load_config
+from grouplink.config import RebuildInput, load_config
 from grouplink.icons import DEFAULT_ICON
 from grouplink.links import (
     ProfilePage,
@@ -40,14 +33,13 @@ from grouplink.links import (
     card_description,
     fetchable_urls,
     meta_cache_key,
-    page_paths_for,
     reserved_profiles,
     skipped_rows,
     to_card,
     unique_urls,
     unknown_icons,
 )
-from grouplink.page import PageModel, render_page
+from grouplink.page import PageModel
 from grouplink.read_notion import read_notion_site
 from grouplink.snapshot import SITE_KEY, build_snapshot, parse_snapshot
 
@@ -74,7 +66,7 @@ class SkippedRowDTO(TypedDict):
 
 
 class RebuildResult(TypedDict):
-    #: Profiles rendered. The root page is a second copy, not another page.
+    #: Profiles in the snapshot.
     pageCount: int
     #: Distinct card URLs across every page.
     linkCount: int
@@ -86,11 +78,6 @@ class RebuildResult(TypedDict):
     hash: str
     #: Whether the run wrote a new snapshot to Key Value.
     published: bool
-    committed: bool
-    #: Paths in the commit. Empty when nothing changed.
-    changedPaths: list[str]
-    commitSha: str | None
-    deployId: str | None
     siteUrl: str
     dryRun: bool
 
@@ -168,17 +155,11 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
         if _unreachable(check)
     ]
 
-    # 6) Build the snapshot the web service serves, and render one file per profile,
-    #    plus a second copy of the default profile's page at the site root, so `/` and
-    #    `/<default slug>` serve the same thing.
+    # 6) Build the snapshot the web service serves: every profile's page model and
+    #    the slug the root page shows.
     models = {page.profile.slug: _to_model(page, meta_by_url) for page in pages}
     snapshot = build_snapshot(models, cfg.default_slug, datetime.now(UTC))
     snapshot_hash = parse_snapshot(snapshot).hash
-    files: list[CommitFilesFileInput] = []
-    for slug, model in models.items():
-        content = render_page(model)
-        paths = page_paths_for(cfg.site_dir, slug, cfg.default_slug)
-        files.extend({"path": path, "content": content} for path in paths)
 
     result: RebuildResult = {
         "pageCount": len(pages),
@@ -188,10 +169,6 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
         "deadLinks": dead_links,
         "hash": snapshot_hash,
         "published": False,
-        "committed": False,
-        "changedPaths": [],
-        "commitSha": None,
-        "deployId": None,
         "siteUrl": cfg.site_url,
         "dryRun": cfg.dry_run,
     }
@@ -199,38 +176,12 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
     # Dry-run lives here in the caller, not in the packs.
     if cfg.dry_run:
         return result
-    assert_writable(cfg)
 
     # 7) Chained runs: read the published snapshot, and write the new one only when
     #    its hash differs. One SET, so a reader never sees half of a rebuild. No TTL,
-    #    so Key Value never evicts it.
+    #    so Key Value never evicts it. The page is live when the SET returns.
     current = await ctx.run(kv_get, {"key": SITE_KEY})
-    if _snapshot_hash(current.get("value")) != snapshot_hash:
-        await ctx.run(kv_set, {"key": SITE_KEY, "value": snapshot})
-        result["published"] = True
-
-    # 8) Chained run, then a batched fan-out: compare each page against what the
-    #    branch already holds, so a quiet day produces no commit and no deploy.
-    #    listTree comes first because getFileContents throws a 404 on a path that
-    #    doesn't exist yet, and a new profile's page never does.
-    repo = f"{cfg.repo_owner}/{cfg.repo_name}"
-    tree = await ctx.run(list_tree, {"repo": repo, "ref": cfg.branch})
-    on_branch = set(tree["paths"])
-    existing = [file for file in files if file["path"] in on_branch]
-    currents = await map_in_batches(
-        existing,
-        lambda file, _i: ctx.run(
-            get_file_contents, {"repo": repo, "path": file["path"], "ref": cfg.branch}
-        ),
-    )
-    current_by_path = {
-        file["path"]: current["content"] for file, current in zip(existing, currents, strict=True)
-    }
-
-    changed = [file for file in files if current_by_path.get(file["path"]) != file["content"]]
-    result["changedPaths"] = [file["path"] for file in changed]
-
-    if not changed:
+    if _snapshot_hash(current.get("value")) == snapshot_hash:
         # A quiet day is not worth a Slack message. A broken link is.
         if dead_links:
             await _notify(
@@ -238,28 +189,10 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
             )
         return result
 
-    # 9) Chained run: every changed page in one commit, so one deploy covers them all.
-    commit = await ctx.run(
-        commit_files,
-        {
-            "owner": cfg.repo_owner,
-            "repo": cfg.repo_name,
-            "branch": cfg.branch,
-            "message": f"chore(site): rebuild {len(changed)} page(s) ({len(card_urls)} links)",
-            "files": changed,
-        },
-    )
-    result["committed"] = True
-    result["commitSha"] = commit["commitSha"]
+    await ctx.run(kv_set, {"key": SITE_KEY, "value": snapshot})
+    result["published"] = True
 
-    # 10) Chained runs: deploy the static site and wait for it to go live.
-    deploy = await ctx.run(
-        trigger_deploy, {"serviceId": cfg.static_site_id, "commitId": commit["commitSha"]}
-    )
-    result["deployId"] = deploy["deployId"]
-    await ctx.run(await_deploy, {"serviceId": cfg.static_site_id, "deployId": deploy["deployId"]})
-
-    # 11) Chained run: post the outcome.
+    # 8) Chained run: post the outcome.
     await _notify(
         ctx,
         f"grouplink is live with {len(card_urls)} links across {len(pages)} pages. {cfg.site_url}",

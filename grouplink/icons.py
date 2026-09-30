@@ -1,8 +1,8 @@
 """The card icon library. A leaf module: both the Notion reader and the page
 renderer name icons, and neither should have to import the other.
 
-An icon name is the filename without .png under site/assets/link-icons. Adding an
-icon takes a file, a name here, and an option in the Notion dropdown; no other code
+An icon name is the filename without .png under grouplink/assets/link-icons.
+Adding an icon takes a file, a name here, and an option in the Notion dropdown; no other code
 names an icon.
 """
 

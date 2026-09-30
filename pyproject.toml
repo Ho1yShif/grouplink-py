@@ -1,7 +1,7 @@
 [project]
 name = "grouplink"
 version = "0.1.0"
-description = "Render's links page, rebuilt from Notion by a Render Workflow and deployed as a static site."
+description = "Render's links page, rebuilt from Notion by a Render Workflow and served from Key Value by a web service."
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
@@ -12,8 +12,6 @@ dependencies = [
     "render-lab-tasks-scrape==0.1.0",
     "render-lab-tasks-render-kv==0.1.0",
     "render-lab-tasks-http==0.1.0",
-    "render-lab-tasks-github==0.1.1",
-    "render-lab-tasks-render==0.1.0",
     "render-lab-tasks-slack==0.1.1",
     "render-lab-triggers==0.1.0",
     "starlette==1.7.0",

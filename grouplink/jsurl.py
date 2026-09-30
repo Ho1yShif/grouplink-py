@@ -4,7 +4,7 @@
 `URL` constructor, which normalizes the string: a bare origin gains a trailing
 slash, the host lowercases, a default port drops, and some characters get
 percent-encoded. `urllib.parse` does none of that, so a port of those two functions
-built on `urllib.parse` would commit a different `site/index.html` on the first run.
+built on `urllib.parse` would render a different page than the TypeScript build.
 
 Only the special schemes are parsed. Everything else returns None, which is what
 both callers want: `safe_url` collapses an unsupported string to "#", and

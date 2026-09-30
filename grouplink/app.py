@@ -13,16 +13,12 @@ because `grouplink.rebuild` cannot join links to profiles without it.
 from __future__ import annotations
 
 from render import Workflows
-from render_lab_tasks_github.tasks import app as github_app
 from render_lab_tasks_http.tasks import app as http_app
 from render_lab_tasks_notion.tasks import app as notion_app
-from render_lab_tasks_render.tasks import app as render_app
 from render_lab_tasks_render_kv.tasks import app as kv_app
 from render_lab_tasks_scrape.tasks import app as scrape_app
 from render_lab_tasks_slack.tasks import app as slack_app
 
 import grouplink.notion_relation  # noqa: F401  (imported for its side effect)
 
-app = Workflows.from_workflows(
-    notion_app, scrape_app, kv_app, http_app, github_app, render_app, slack_app
-)
+app = Workflows.from_workflows(notion_app, scrape_app, kv_app, http_app, slack_app)

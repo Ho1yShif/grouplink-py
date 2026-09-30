@@ -338,10 +338,8 @@ dependencies = [
     { name = "redis" },
     { name = "render" },
     { name = "render-lab-tasks-core" },
-    { name = "render-lab-tasks-github" },
     { name = "render-lab-tasks-http" },
     { name = "render-lab-tasks-notion" },
-    { name = "render-lab-tasks-render" },
     { name = "render-lab-tasks-render-kv" },
     { name = "render-lab-tasks-scrape" },
     { name = "render-lab-tasks-slack" },
@@ -365,10 +363,8 @@ requires-dist = [
     { name = "redis", specifier = "==6.4.0" },
     { name = "render", specifier = "==1.0.1" },
     { name = "render-lab-tasks-core", specifier = "==0.1.1" },
-    { name = "render-lab-tasks-github", specifier = "==0.1.1" },
     { name = "render-lab-tasks-http", specifier = "==0.1.0" },
     { name = "render-lab-tasks-notion", specifier = "==0.1.0" },
-    { name = "render-lab-tasks-render", specifier = "==0.1.0" },
     { name = "render-lab-tasks-render-kv", specifier = "==0.1.0" },
     { name = "render-lab-tasks-scrape", specifier = "==0.1.0" },
     { name = "render-lab-tasks-slack", specifier = "==0.1.1" },
@@ -973,21 +969,6 @@ wheels = [
 ]
 
 [[package]]
-name = "render-lab-tasks-github"
-version = "0.1.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "httpx" },
-    { name = "render" },
-    { name = "render-lab-tasks-core" },
-    { name = "render-lab-triggers" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/59/f1/a83598660997bef22cad48d4c5149b19fac932452670d8df6d09e475f367/render_lab_tasks_github-0.1.1.tar.gz", hash = "sha256:7e422607df825e597ab1790afd11c117806d64a7ad0ca6357ceb517e6f524c7b", size = 16086, upload-time = "2026-09-09T11:00:16.172Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/54/d9/527a6fd560b13b1aafb7eb6d5cb84b448551800f4b71ca618647e761c0f3/render_lab_tasks_github-0.1.1-py3-none-any.whl", hash = "sha256:cb82dc8b67c8dfa7b691f5552fb5c430a40e8fa00a6b0e01b81c1965c67c2dce", size = 27875, upload-time = "2026-09-09T11:00:14.989Z" },
-]
-
-[[package]]
 name = "render-lab-tasks-http"
 version = "0.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1013,20 +994,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/45/d8/52356d9ceddf1ea1ef0896a8751ebdb8613f897399bc75131ae6d7c4bd40/render_lab_tasks_notion-0.1.0.tar.gz", hash = "sha256:b78390adb8c789284d472bb0861a015709206b78b013d243cd5ecd7625344843", size = 12400, upload-time = "2026-09-09T10:41:55.808Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/15/bc/7c2e15e9c10ab5b227e6a0bc6f562f3fa7c9ad62ac0d30600e51c97b5563/render_lab_tasks_notion-0.1.0-py3-none-any.whl", hash = "sha256:310db7b101c32e089d16ec96986756cffdcbd57adb9fa3d3c0e7ae980e6b642b", size = 20173, upload-time = "2026-09-09T10:41:54.618Z" },
-]
-
-[[package]]
-name = "render-lab-tasks-render"
-version = "0.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "httpx" },
-    { name = "render" },
-    { name = "render-lab-tasks-core" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/39/4c/38874b030b09fa4b8b5ab4924b3772782bf9d6c272e15e8d785396c5ab27/render_lab_tasks_render-0.1.0.tar.gz", hash = "sha256:c126255bd22e64a77c66a31f94dd5001cdb4bf4adb43c2f6d2b7a8a2decd5b00", size = 11045, upload-time = "2026-09-09T10:45:30.326Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/fe/dc/765109b07cad7bb8a1b896eb73639fc230bc54139e3d015a143d77ab9267/render_lab_tasks_render-0.1.0-py3-none-any.whl", hash = "sha256:eaffe8f32f1c019a87f8850ad563b93a5049025e9e112d8d8e5f71a1910f8bfc", size = 19011, upload-time = "2026-09-09T10:45:29.213Z" },
 ]
 
 [[package]]

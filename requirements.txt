@@ -217,10 +217,8 @@ httpx==0.28.1 \
     # via
     #   render
     #   render-lab-tasks-core
-    #   render-lab-tasks-github
     #   render-lab-tasks-http
     #   render-lab-tasks-notion
-    #   render-lab-tasks-render
     #   render-lab-tasks-scrape
     #   render-lab-tasks-slack
 idna==3.19 \
@@ -471,10 +469,8 @@ render==1.0.1 \
     --hash=sha256:db3b8004a9a7b4f2541b6127c6dd097e870bf83f016ed0065d5eecac73b9bb07
     # via
     #   grouplink
-    #   render-lab-tasks-github
     #   render-lab-tasks-http
     #   render-lab-tasks-notion
-    #   render-lab-tasks-render
     #   render-lab-tasks-render-kv
     #   render-lab-tasks-scrape
     #   render-lab-tasks-slack
@@ -484,17 +480,11 @@ render-lab-tasks-core==0.1.1 \
     --hash=sha256:c42545f18e068a961ef0079b57ed518fbbd374cd99516ed7a3ca9a8e8275c1e4
     # via
     #   grouplink
-    #   render-lab-tasks-github
     #   render-lab-tasks-http
     #   render-lab-tasks-notion
-    #   render-lab-tasks-render
     #   render-lab-tasks-render-kv
     #   render-lab-tasks-scrape
     #   render-lab-tasks-slack
-render-lab-tasks-github==0.1.1 \
-    --hash=sha256:7e422607df825e597ab1790afd11c117806d64a7ad0ca6357ceb517e6f524c7b \
-    --hash=sha256:cb82dc8b67c8dfa7b691f5552fb5c430a40e8fa00a6b0e01b81c1965c67c2dce
-    # via grouplink
 render-lab-tasks-http==0.1.0 \
     --hash=sha256:857c15cf29c2a3a4f937004fb3e09db5791de1d8ed26377a636437091dabe43c \
     --hash=sha256:982291565e4090dcd94de2c3698442b651cb909fd1fc5e82c33ccadbe4c77391
@@ -502,10 +492,6 @@ render-lab-tasks-http==0.1.0 \
 render-lab-tasks-notion==0.1.0 \
     --hash=sha256:310db7b101c32e089d16ec96986756cffdcbd57adb9fa3d3c0e7ae980e6b642b \
     --hash=sha256:b78390adb8c789284d472bb0861a015709206b78b013d243cd5ecd7625344843
-    # via grouplink
-render-lab-tasks-render==0.1.0 \
-    --hash=sha256:c126255bd22e64a77c66a31f94dd5001cdb4bf4adb43c2f6d2b7a8a2decd5b00 \
-    --hash=sha256:eaffe8f32f1c019a87f8850ad563b93a5049025e9e112d8d8e5f71a1910f8bfc
     # via grouplink
 render-lab-tasks-render-kv==0.1.0 \
     --hash=sha256:3af500015ae7cb241c4ebe78ab70f62594ee15fc90e2b82b3df5a7ffd419d941 \
@@ -524,7 +510,6 @@ render-lab-triggers==0.1.0 \
     --hash=sha256:e8647d6a5386d2c637456738142ddada6a3e08f05e98aa4f5462402c08b30d1d
     # via
     #   grouplink
-    #   render-lab-tasks-github
     #   render-lab-tasks-slack
 six==1.17.0 \
     --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274 \

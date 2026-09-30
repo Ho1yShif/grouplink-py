@@ -1,11 +1,10 @@
-"""Render every profile's page from the real Notion databases and write them into
-site/, so a local static server serves the same HTML the workflow commits.
+"""Build the snapshot from the real Notion databases and write it to a local Redis,
+so a local web service serves the same pages as production.
 
 Run with `uv run python -m scripts.preview`.
 
-This is the read half of grouplink.rebuild: Notion and the scrape, no Key Value, no
-GitHub, no deploy. It overwrites the tracked files under site/ — `git checkout --
-site && git clean -fd site` puts them back.
+This is the read half of grouplink.rebuild: Notion and the scrape, with no metadata
+cache, no health check, and no Slack post.
 """
 
 from __future__ import annotations
@@ -22,7 +21,7 @@ from grouplink.config import load_config
 from grouplink.links import card_description, fetchable_urls, to_card, unique_urls
 from grouplink.page import PageModel
 from grouplink.read_notion import read_notion_site
-from scripts.write_pages import REPO_ROOT, write_pages
+from scripts.local_site import REPO_ROOT, write_snapshot
 
 
 async def main() -> None:
@@ -42,17 +41,17 @@ async def main() -> None:
         url: card_description(result or {}) for url, result in zip(card_urls, scraped, strict=True)
     }
 
-    for page in pages:
-        write_pages(
-            PageModel(
+    write_snapshot(
+        {
+            page.profile.slug: PageModel(
                 name=page.profile.name,
                 tagline=page.profile.tagline,
                 cards=[to_card(row, descriptions.get(row.url, "")) for row in page.rows],
-            ),
-            site_dir=cfg.site_dir,
-            slug=page.profile.slug,
-            default_slug=cfg.default_slug,
-        )
+            )
+            for page in pages
+        },
+        cfg.default_slug,
+    )
 
 
 if __name__ == "__main__":

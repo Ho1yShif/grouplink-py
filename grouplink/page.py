@@ -1,5 +1,5 @@
 """The whole page. One function, one string, no framework and no build step —
-grouplink.rebuild commits whatever this returns as site/index.html.
+the web service serves whatever this returns for each profile.
 
 Visual foundations come from Render's brand system: semantic color tokens in
 :root with a dark override, PP Neue Montreal for prose, square corners,
@@ -8,7 +8,7 @@ Visual foundations come from Render's brand system: semantic color tokens in
 The page carries its own Content-Security-Policy, with the inline style and
 script blocks allowed by hash. Adding either one anywhere but STYLES or
 ICON_FALLBACK_SCRIPT will be blocked by the browser. The policy is a meta tag
-rather than a render.yaml header so the hashes cannot drift from the content
+rather than a response header so the hashes cannot drift from the content
 they cover.
 
 The module is page.py rather than render.py, because `render` is the SDK's
@@ -40,7 +40,7 @@ class LinkCard:
     description: str
     #: `<origin>/favicon.ico`, hidden on error.
     icon_url: str
-    #: Which file under site/assets/link-icons the card draws in its left column.
+    #: Which file under grouplink/assets/link-icons the card draws in its left column.
     icon: IconName
 
 
@@ -483,7 +483,7 @@ def _render_card(card: LinkCard) -> str:
 LOGO_HREF = "https://dashboard.render.com/"
 
 # The masthead's icon row. It is the same on every page and does not come from
-# Notion. Each label needs a matching file under site/assets/icons and a
+# Notion. Each label needs a matching file under grouplink/assets/icons and a
 # .social__icon--<label> rule in STYLES.
 SOCIALS: list[SocialLink] = [
     SocialLink("YouTube", "https://www.youtube.com/@render-inc"),

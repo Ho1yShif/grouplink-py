@@ -1,35 +1,16 @@
-# Blueprint for everything except the Workflow: the static site the page is served
-# from, the Key Value instance that caches scraped metadata, and the web service
-# Notion's webhook posts to. Blueprints don't support Workflows yet, so create the
-# Workflow service in the Dashboard and set its env vars there — including
-# REDIS_URL, copied from this Key Value instance's internal connection string.
+# Blueprint for everything except the Workflow: the web service that serves the
+# page and receives Notion's webhook, and the Key Value instance that holds the
+# published site and caches scraped metadata. Blueprints don't support Workflows
+# yet, so create the Workflow service in the Dashboard and set its env vars there,
+# including REDIS_URL, copied from this Key Value instance's internal connection
+# string.
 #
-# Order: apply this Blueprint, create the Workflow, then set WORKFLOW_SLUG and
-# RENDER_STATIC_SITE_ID.
+# Order: apply this Blueprint, create the Workflow, then set WORKFLOW_SLUG.
 projects:
   - name: grouplink
     environments:
       - name: production
         services:
-          # The page. autoDeploy is off because grouplink.rebuild triggers the deploy
-          # itself, right after it commits the new index.html.
-          - type: web
-            name: grouplink-site
-            runtime: static
-            buildCommand: ""
-            staticPublishPath: ./site
-            autoDeployTrigger: "off"
-            headers:
-              - path: /*
-                name: X-Content-Type-Options
-                value: nosniff
-              - path: /*
-                name: Referrer-Policy
-                value: strict-origin-when-cross-origin
-              - path: /assets/fonts/*
-                name: Cache-Control
-                value: public, max-age=31536000, immutable
-
           # Serves each profile's page from the snapshot in Key Value. Notion posts
           # here on every edit; the receiver debounces and starts one
           # grouplink.rebuild run. On the starter plan so it is always on — a free
@@ -45,15 +26,6 @@ projects:
             startCommand: python -m grouplink.webhook
             healthCheckPath: /healthz
             autoDeployTrigger: commit
-            # Without this the receiver redeploys every time a run commits a page.
-            buildFilter:
-              paths:
-                - grouplink/**
-                - pyproject.toml
-                - uv.lock
-                - requirements.txt
-                - .python-version
-                - render.yaml
             envVars:
               - key: RENDER_API_KEY
                 sync: false

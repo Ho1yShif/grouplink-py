@@ -1,10 +1,8 @@
-"""Regenerate the pages under site/ from seed links, with the descriptions the scrape
-finds in production written out by hand.
+"""Write a seed snapshot to a local Redis, from seed links with the descriptions the
+scrape finds in production written out by hand.
 
-The workflow overwrites these files on its first real run. They exist so the static
-site has something to serve before then, and so the local preview has the same shape
-as production: one page per profile, plus a copy of the default profile's page at the
-root. Run with `uv run python -m scripts.placeholder`.
+It lets you run the web service locally without Notion. The golden page tests
+render the same seed links. Run with `uv run python -m scripts.placeholder`.
 """
 
 from __future__ import annotations
@@ -14,7 +12,7 @@ from dataclasses import dataclass
 from grouplink.icons import IconName
 from grouplink.links import to_card
 from grouplink.page import PageModel
-from scripts.write_pages import write_pages
+from scripts.local_site import write_snapshot
 
 
 @dataclass(frozen=True)
@@ -93,17 +91,17 @@ TAGLINE = "The fastest path to production for full-stack applications and agents
 
 
 def main() -> None:
-    for profile in PROFILES:
-        write_pages(
-            PageModel(
+    write_snapshot(
+        {
+            profile.slug: PageModel(
                 name=profile.name,
                 tagline=TAGLINE,
                 cards=[to_card(link, link.description) for link in profile.links],
-            ),
-            site_dir="site",
-            slug=profile.slug,
-            default_slug=DEFAULT_SLUG,
-        )
+            )
+            for profile in PROFILES
+        },
+        DEFAULT_SLUG,
+    )
 
 
 if __name__ == "__main__":

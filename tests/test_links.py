@@ -11,8 +11,6 @@ from grouplink.links import (
     fetchable_urls,
     group_by_profile,
     meta_cache_key,
-    page_path,
-    page_paths_for,
     skipped_rows,
     to_icon_name,
     to_link_rows,
@@ -244,22 +242,6 @@ class TestFaviconUrl:
 
     def test_returns_empty_for_a_mailto_link(self) -> None:
         assert favicon_url("mailto:shifra@render.com") == ""
-
-
-def test_page_path_puts_the_default_profile_at_the_root() -> None:
-    assert page_path("site", "") == "site/index.html"
-    assert page_path("site", "alex") == "site/alex/index.html"
-
-
-class TestPagePathsFor:
-    def test_writes_the_default_profile_twice(self) -> None:
-        assert page_paths_for("site", "shifra", "shifra") == [
-            "site/shifra/index.html",
-            "site/index.html",
-        ]
-
-    def test_writes_everyone_else_once(self) -> None:
-        assert page_paths_for("site", "alex", "shifra") == ["site/alex/index.html"]
 
 
 class TestAssertDefaultSlug:

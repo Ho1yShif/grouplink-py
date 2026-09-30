@@ -3,11 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
-    # A rebuild commits only pages, and no check reads them.
-    paths-ignore: ['site/**']
   pull_request:
 
-# A rebuild commits pages to main, so cancel the run an older commit started.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
