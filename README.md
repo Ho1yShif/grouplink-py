@@ -44,8 +44,9 @@ page is live as soon as the `SET` returns.
 `grouplink/page.py`. A change to `page.py` goes live with the web service deploy
 and needs no rebuild. If Key Value is down or the value won't parse, the service
 serves its last good copy from memory, and it answers 503 if it has none. If the
-key is missing, it starts one `grouplink.rebuild` and answers 503 until the run
-writes the key.
+key is missing, it starts a `grouplink.rebuild` and answers 503 until the run
+writes the key. It starts another run every 10 minutes while the key stays
+missing.
 
 A run starts when someone edits Notion. `grouplink-webhook` verifies Notion's signature, drops the event types that can't
 change a page, and waits 60 seconds of quiet before dispatching

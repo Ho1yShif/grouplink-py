@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date
@@ -17,6 +18,10 @@ from grouplink.page import render_page
 from grouplink.snapshot import Snapshot, parse_snapshot
 
 log = logging.getLogger(__name__)
+
+#: Seconds before a key that is still missing starts another rebuild. The first run
+#: can fail or be a dry run, and nothing else would start one.
+REBUILD_RETRY_SECONDS = 600
 
 
 @dataclass(frozen=True)
@@ -33,6 +38,7 @@ class SiteStore:
         *,
         read: Callable[[], Awaitable[str | None]],
         rebuild: Callable[[], Awaitable[object]],
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """`read` returns the raw snapshot, or None when the key is missing.
         `rebuild` starts one grouplink.rebuild run.
@@ -40,7 +46,9 @@ class SiteStore:
         self._read = read
         self._rebuild = rebuild
         self._last_good: Snapshot | None = None
-        self._rebuild_started = False
+        self._clock = clock
+        #: Clock time of the last rebuild this store started. None when there is none.
+        self._rebuild_started_at: float | None = None
         #: (snapshot hash, slug, footer year) -> page. Holds one snapshot's pages.
         self._rendered: dict[tuple[str, str, int], RenderedPage] = {}
 
@@ -65,7 +73,7 @@ class SiteStore:
         if self._last_good is None or self._last_good.hash != snapshot.hash:
             self._rendered.clear()
         self._last_good = snapshot
-        self._rebuild_started = False
+        self._rebuild_started_at = None
         return snapshot
 
     def page(self, snapshot: Snapshot, slug: str) -> RenderedPage | None:
@@ -84,16 +92,18 @@ class SiteStore:
         return page
 
     async def _start_rebuild(self) -> None:
-        """One run per missing key. A new Key Value instance, or a lost key, starts
-        the rebuild that writes it.
+        """One run per missing key every REBUILD_RETRY_SECONDS. A new Key Value
+        instance, or a lost key, starts the rebuild that writes it.
         """
-        if self._rebuild_started:
+        now = self._clock()
+        started_at = self._rebuild_started_at
+        if started_at is not None and now - started_at < REBUILD_RETRY_SECONDS:
             return
-        self._rebuild_started = True
+        self._rebuild_started_at = now
         try:
             await self._rebuild()
             log.info("the site key is missing, so a rebuild started")
         except Exception as error:
             # Let the next request try again.
-            self._rebuild_started = False
+            self._rebuild_started_at = None
             log.error("could not start a rebuild for the missing site key: %s", error)

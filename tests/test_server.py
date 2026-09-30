@@ -11,7 +11,7 @@ from starlette.testclient import TestClient
 
 from grouplink.notion_webhook import NotionWebhook
 from grouplink.page import LinkCard, PageModel, render_page
-from grouplink.site_store import SiteStore
+from grouplink.site_store import REBUILD_RETRY_SECONDS, SiteStore
 from grouplink.snapshot import build_snapshot
 from grouplink.webhook import create_app
 
@@ -193,3 +193,24 @@ def test_answers_a_head_request(app: App) -> None:
     response = app.client.head("/alex")
     assert response.status_code == 200
     assert response.content == b""
+
+
+async def test_starts_another_rebuild_when_the_key_stays_missing() -> None:
+    """The first run can fail or be a dry run, so the page must not stay at 503."""
+    now = [0.0]
+    kv = FakeKv(None)
+    dispatcher = Dispatcher()
+    store = SiteStore(
+        read=kv.read,
+        rebuild=lambda: dispatcher.start("grouplink.rebuild", [{}]),
+        clock=lambda: now[0],
+    )
+
+    await store.snapshot()
+    now[0] = REBUILD_RETRY_SECONDS - 1
+    await store.snapshot()
+    assert len(dispatcher.calls) == 1
+
+    now[0] = REBUILD_RETRY_SECONDS + 1
+    await store.snapshot()
+    assert len(dispatcher.calls) == 2
