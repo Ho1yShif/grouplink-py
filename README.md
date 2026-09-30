@@ -1,8 +1,8 @@
 # grouplink
 
-Render's links page. The page is plain HTML on a Render static site. A Render
-Workflow reads the link list from Notion, enriches it, commits one page per
-profile under `site/`, and deploys.
+Render's links page. A Render Workflow reads the link list from Notion, enriches
+it, and writes the result to Key Value. A Render web service reads it from Key
+Value and serves one plain HTML page per profile.
 
 It replaces a Linktree page that couldn't be styled to brand and was two-thirds
 Linktree's own affiliate marketplace.
@@ -21,11 +21,8 @@ grouplink.rebuild
 ├── scrape.extractMetadata ×N   scrape the misses
 ├── kv.set              ×N      cache them for 7 days
 ├── http.request        ×N      health-check every link
-├── github.listTree             which pages already exist on the branch
-├── github.getFileContents ×N   skip the pages that haven't changed
-├── github.commitFiles          write the changed pages, in one commit
-├── render.triggerDeploy
-├── render.awaitDeploy
+├── kv.get                      read the published snapshot
+├── kv.set                      write the new snapshot, if its hash changed
 └── slack.postMessage           the live URL, or the dead links
 ```
 
@@ -38,8 +35,19 @@ The health check counts a link as dead when it answers 404, 5xx, or nothing at a
 A 401, 403, 405, 429, or 999 means the site is up and refusing a request with no
 browser fingerprint, which is what X and LinkedIn do.
 
-A run starts when someone edits Notion. `grouplink-webhook` is a small web
-service that verifies Notion's signature, drops the event types that can't
+The snapshot is one JSON document under the `grouplink:site` key. It holds every
+profile's page model and the default slug, but no HTML. The run writes it with one
+`SET` and no TTL, and skips the write when the hash matches the published one. The
+page is live as soon as the `SET` returns.
+
+`grouplink-webhook` reads the key on each page request and renders it with
+`grouplink/page.py`. A change to `page.py` goes live with the web service deploy
+and needs no rebuild. If Key Value is down or the value won't parse, the service
+serves its last good copy from memory, and it answers 503 if it has none. If the
+key is missing, it starts one `grouplink.rebuild` and answers 503 until the run
+writes the key.
+
+A run starts when someone edits Notion. `grouplink-webhook` verifies Notion's signature, drops the event types that can't
 change a page, and waits 60 seconds of quiet before dispatching
 `grouplink.rebuild`. Editing eight rows in one sitting gives you one run.
 
@@ -50,8 +58,9 @@ If the run itself fails, it posts the error to Slack and rethrows. The receiver
 has already answered Notion by then, so its response says nothing about how the
 run went.
 
-A run commits and deploys unless you set `DRY_RUN=true`. A dry run reads, scrapes,
-caches, and health-checks, then returns the model without writing anything.
+A run publishes unless you set `DRY_RUN=true`. A dry run reads, scrapes, caches,
+and health-checks, then returns the result without writing the snapshot or
+posting to Slack.
 
 ## Run it locally
 
@@ -77,29 +86,27 @@ uv export --frozen --no-dev --no-emit-project -o requirements.txt
 
 ### Previewing the page
 
+The preview needs a local Redis. Run `docker run -p 6379:6379 redis`, or
+`redis-server` if you have it installed.
+
 `scripts/preview.py` reads both Notion databases, scrapes each card's
-description, and writes one `site/<slug>/index.html` per profile plus the root
-copy. It needs `NOTION_TOKEN`, both database IDs, and `SITE_DEFAULT_SLUG` in
-`.env`. It never commits, deploys, or touches Key Value, so no `REDIS_URL` is
-needed.
+description, and writes the snapshot to the local Redis. It needs
+`NOTION_TOKEN`, both database IDs, and `SITE_DEFAULT_SLUG` in `.env`. It writes
+to `REDIS_URL`, or to `redis://localhost:6379` when that is unset, and refuses a
+Redis that is not on this machine, so it can't overwrite the live site.
 
 ```bash
 uv run python -m scripts.preview
-python -m http.server 3000 --directory site
+REDIS_URL=redis://localhost:6379 WORKFLOW_SLUG=local uv run python -m grouplink.webhook
 ```
 
-There is no reload-on-save server. `http.server` serves directory indexes, so
-`/shifra/` resolves the way the static site does; re-run the script and refresh.
+Open `http://localhost:3000`. There is no reload on save. Re-run the script, or
+restart the server after a change to `page.py`.
 
-The pages under `site/` are tracked, so `git checkout -- site && git clean -fd site`
-undoes a preview.
-
-`scripts/placeholder.py` regenerates the pages under `site/` from the seed links
-without touching Notion, for looking at the design before the databases exist.
-Run it with `uv run python -m scripts.placeholder`. It writes `/shifra`,
-`/graham`, and a copy of the root profile's page at `/`, the same shape a real run
-produces. Both scripts render and write through `scripts/write_pages.py`, so
-neither can disagree with the other about where a page belongs.
+`scripts/placeholder.py` writes a snapshot of the seed links instead, without
+touching Notion, for looking at the design before the databases exist. Run it
+with `uv run python -m scripts.placeholder`. It writes `/shifra` and `/graham`,
+and `/` shows `shifra`.
 
 ## The Notion databases
 
@@ -112,7 +119,7 @@ There are two. Links:
 | `Visible`  | checkbox | Unchecked rows are dropped.                                                               |
 | `Everyone` | checkbox | Checked puts the link on every profile's page.                                            |
 | `Profiles` | relation | Which pages the link appears on. Relate it to two rows and it appears on both.            |
-| `Icon`     | select   | Which icon the card draws. One option per file under `site/assets/link-icons/`.           |
+| `Icon`     | select   | Which icon the card draws. One option per file under `grouplink/assets/link-icons/`.      |
 | `Order`    | number   | Card position, lowest first. Ties go oldest first. Rows with no number go last. Required. |
 
 A `URL` cell is read as `https://`. A cell with no scheme, such as `render.com`,
@@ -132,9 +139,12 @@ Profiles:
 A link's audience is `Everyone` plus whatever `Profiles` names. A row with both
 set is redundant, not contradictory, and a row with neither renders nowhere.
 
-A profile's page is written to `site/<slug>/index.html`. The profile named by
-`SITE_DEFAULT_SLUG` is written to `site/index.html` as well, so `/` and its own
-path serve the same page.
+A profile's page is served at `/<slug>`. The profile named by `SITE_DEFAULT_SLUG`
+is served at `/` as well.
+
+The slugs `assets`, `healthz`, `tasks`, and `webhooks` are reserved for the web
+service's own routes. The run skips a profile with one of them and lists it with
+the skipped rows.
 
 `Icon` is matched case-insensitively against the nine names in
 `grouplink/icons.py`: `arrow`, `credits`, `download`, `email`, `form`, `info`,
@@ -168,7 +178,7 @@ by its number.
   a Notion view does not change the site.
 
 If the `Order` column is missing or renamed, Notion rejects the query and the run
-fails. The site keeps its last deploy.
+fails. The site keeps serving the last snapshot.
 
 ## Configuration
 
@@ -177,24 +187,20 @@ fails. The site keeps its last deploy.
 | `NOTION_TOKEN`                           | —        | Notion integration token.                       |
 | `NOTION_LINKS_DATABASE_ID`               | —        | The links database.                             |
 | `NOTION_PROFILES_DATABASE_ID`            | —        | The profiles database.                          |
-| `REDIS_URL`                              | —        | Key Value instance holding the metadata cache.  |
-| `GITHUB_TOKEN`                           | —        | Write access to the site repo. See below.       |
-| `GITHUB_REPO_OWNER` / `GITHUB_REPO_NAME` | —        | Where the page is committed.                    |
-| `GITHUB_BRANCH`                          | `main`   | Branch to commit to.                            |
-| `RENDER_API_KEY`                         | —        | Used to trigger the static site deploy.         |
-| `RENDER_STATIC_SITE_ID`                  | —        | The static site to deploy.                      |
-| `SITE_URL`                               | —        | Public URL, quoted in the Slack message.        |
-| `SLACK_WEBHOOK_URL`                      | —        | Optional. Unset logs the digest to the console. |
-| `DRY_RUN`                                | `false`  | Set `true` to skip the commit and the deploy.   |
-| `SITE_DEFAULT_SLUG`                      | —        | Slug of the profile the root page shows.        |
-| `SITE_DIR`                               | `site`   | Directory the pages are committed under.        |
-| `METADATA_TTL_SECONDS`                   | `604800` | How long a scraped description is cached.       |
-| `LINKS_LIMIT`                            | `100`    | Notion rows to read per run.                    |
+| `REDIS_URL`                   | —        | Key Value instance holding the site and the metadata cache. |
+| `SITE_URL`                    | —        | Public URL, quoted in the Slack message.        |
+| `SLACK_WEBHOOK_URL`           | —        | Optional. Unset logs the digest to the console. |
+| `DRY_RUN`                     | `false`  | Set `true` to skip the snapshot write and the Slack post. |
+| `SITE_DEFAULT_SLUG`           | —        | Slug of the profile the root page shows.        |
+| `METADATA_TTL_SECONDS`        | `604800` | How long a scraped description is cached.       |
+| `LINKS_LIMIT`                 | `100`    | Notion rows to read per run.                    |
 
-The webhook receiver reads its own set, plus `RENDER_API_KEY`:
+The web service reads its own set:
 
 | Var                     | Default             | Purpose                                        |
 | ----------------------- | ------------------- | ---------------------------------------------- |
+| `REDIS_URL`             | —                   | Key Value instance holding the site. The Blueprint sets it. |
+| `RENDER_API_KEY`        | —                   | Used to start Workflow runs.                   |
 | `WORKFLOW_SLUG`         | —                   | Slug of the Workflow service to dispatch to.   |
 | `NOTION_WEBHOOK_SECRET` | —                   | Verification token of the Notion subscription. |
 | `DISPATCH_TOKEN`        | —                   | Bearer token required on `POST /tasks/:task`.  |
@@ -210,47 +216,6 @@ Each page's name comes from its Profiles row, not from configuration.
 
 Per-run overrides go in the input: `--input='[{"dryRun":false}]'`.
 
-### The GitHub token
-
-`GITHUB_TOKEN` is the only credential that writes to a repo. `github.commitFiles`
-uses it once per run, to write the changed pages to `GITHUB_BRANCH` of
-`GITHUB_REPO_OWNER/GITHUB_REPO_NAME`. The run also reads the branch's tree and
-the pages already on it to work out which ones changed, and read access to the
-contents covers that too.
-
-The pack sends the value as a bearer credential, and nothing inspects
-its shape, so all three GitHub token types work. Test with a personal access
-token and run an installation token in production. Only the value changes.
-
-| Token type                    | What it needs                                                                                                                                                                                                                                     |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Fine-grained PAT              | Repository access limited to the site repo, and `Contents` → **Read and write**. GitHub adds the required `Metadata` → **Read** on its own. Leave everything else at no access. GitHub caps expiration at one year unless your org allows longer. |
-| Classic PAT                   | `repo` for a private repo, `public_repo` for a public one. Both grant more than the run needs.                                                                                                                                                    |
-| GitHub App installation token | Install the app on the site repo with `Contents: Read and write`, then mint an installation token.                                                                                                                                                |
-
-An installation token expires after an hour, so a value pasted into the
-environment stops working before the next edit arrives. Something has to mint a
-fresh one and update `GITHUB_TOKEN` on the Workflow service through the Render
-API. A fine-grained PAT needs no refresh.
-
-If the repo belongs to an org, an org owner has to approve a fine-grained token
-before it can write.
-
-Branch protection can reject a token that has the right permission. The commit is
-a fast-forward ref update, so a rule on `GITHUB_BRANCH` requiring a pull request
-or a passing status check turns it down. Exempt the token, or point
-`GITHUB_BRANCH` at an unprotected branch.
-
-A token problem fails the run at `github.commitFiles`, and that error goes to
-Slack. No other step needs GitHub, so the only other symptom is a page that stops
-updating. The status code names the cause: 401 for an expired or revoked token,
-403 `Resource not accessible by personal access token` for a live token without
-write access to the contents. On a public repo the tree and page reads earlier in
-the run return 200 either way, so they say nothing about the token.
-
-The token belongs on the Workflow service. `grouplink-webhook` never calls
-GitHub, so don't set it there.
-
 ## The page
 
 `grouplink/page.py` is one function returning the whole document — no framework, no
@@ -260,37 +225,41 @@ hairlines, and purple reserved for links and focus rings.
 
 Each card is a two-column grid: an icon on the left, then the title, the scraped
 description, and the mono target line. The icon comes from the row's `Icon`
-column. The nine files under `site/assets/link-icons/` are dark artwork on
+column. The nine files under `grouplink/assets/link-icons/` are dark artwork on
 transparency, drawn as CSS masks in `var(--text-faint)` so they read on both
 backgrounds. Adding a tenth takes a file, a name in `grouplink/icons.py`, and an
 option in the Notion dropdown. The order the names are declared in decides the
 order of the generated mask rules, which changes the CSP style hash.
 
 The footer carries a copyright year. `render_page` takes it as an argument rather
-than reading the clock, so the golden fixtures stay stable; the default is the
-current year. On 1 January the next run rewrites all three pages, commits, and
-deploys.
+than reading the clock, so the golden fixtures stay stable. The web service passes
+the current year on each request.
 
 The masthead is centered, with the Render wordmark above a row of social icons.
 It is the same on every page. The icons are YouTube, LinkedIn, X, GitHub, and
 Discord, and they come from `SOCIALS` in `grouplink/page.py` rather than from Notion,
 so editing that list is the only way to change the row. Each label needs a
-matching file in `site/assets/icons/`. The wordmark and the icons are white files
+matching file in `grouplink/assets/icons/`. The wordmark and the icons are white files
 drawn as CSS masks and painted with the text color, so they read on both the
 light and dark background.
 
-The brand woff2 files under `site/assets/fonts/` are commercial faces. If this
+The brand woff2 files under `grouplink/assets/fonts/` are commercial faces. If this
 repo needs to stop redistributing them, delete the three `@font-face` blocks and
 load Manrope and Roboto Mono instead — the fallback chain already names them.
 
 Assets are referenced from the site root (`/assets/…`) so they resolve the same
-from `/` and from `/<slug>/`.
+from `/` and from `/<slug>/`. The web service serves them from `grouplink/assets/`.
+
+Every response carries `X-Content-Type-Options: nosniff` and
+`Referrer-Policy: strict-origin-when-cross-origin`. The fonts are cached for a
+year. A page response has `Cache-Control: no-cache` and an `ETag`, so a browser
+revalidates on each visit and gets a 304 when nothing changed.
 
 `grouplink/jsurl.py` is a subset of the WHATWG URL parser. `safe_url` and
 `favicon_url` ran through the JS `URL` constructor in the TypeScript build, which
 normalizes a href: a bare origin gains a trailing slash, the host lowercases,
-and a default port drops. `urllib.parse` does none of that, and a page that
-differs by one character is a commit plus a deploy.
+and a default port drops. `urllib.parse` does none of that, so the Python pages
+would differ from the TypeScript ones.
 
 ## Deploy
 
@@ -299,9 +268,9 @@ differs by one character is a commit plus a deploy.
 Blueprints don't support Workflows yet, so the Workflow service is created in the
 Dashboard and everything else comes from [`render.yaml`](render.yaml).
 
-The Blueprint comes first even though the receiver needs the Workflow's slug,
-because the Workflow needs `REDIS_URL` from the Key Value instance and
-`RENDER_STATIC_SITE_ID` from the static site, and the Blueprint creates both.
+The Blueprint comes first even though the web service needs the Workflow's slug,
+because the Workflow needs `REDIS_URL` from the Key Value instance, and the
+Blueprint creates it.
 `grouplink-webhook` fails its first deploy as a result: it exits at startup
 while `WORKFLOW_SLUG` is empty, and step 5 is what fixes it.
 
@@ -333,29 +302,23 @@ while `WORKFLOW_SLUG` is empty, and step 5 is what fixes it.
    you save the subscription in step 6, which needs the receiver's URL.
 
 2. Click the button, or Dashboard → **New > Blueprint** and link this repo. It
-   creates the static site (`grouplink-site`), the Key Value instance
-   (`grouplink-cache`), and the webhook receiver (`grouplink-webhook`). Leave
-   `WORKFLOW_SLUG` blank when it prompts. Note the static site's ID and URL. The
-   button reads `render.yaml` from `main`, so push first.
+   creates the Key Value instance (`grouplink-cache`) and the web service
+   (`grouplink-webhook`). Leave `WORKFLOW_SLUG` blank when it prompts. Note the
+   web service's URL. The button reads `render.yaml` from `main`, so push first.
 3. Dashboard → **New > Workflow** on the same repo.
    Build: `pip install -r requirements.txt`. Start: `python -m grouplink.main`.
    Render's Python image does not ship `uv`, so the build installs from the
    exported requirements file.
-   Turn auto-deploy off — the workflow commits to this repo, and you don't want it
-   redeploying itself every time the page changes.
 4. Set the [Configuration](#configuration) vars on the Workflow. The webhook
    receiver's table doesn't apply here. Required:
    - `NOTION_TOKEN`, `NOTION_LINKS_DATABASE_ID`, `NOTION_PROFILES_DATABASE_ID`.
-   - `GITHUB_TOKEN`, `GITHUB_REPO_OWNER`, `GITHUB_REPO_NAME`. See
-     [The GitHub token](#the-github-token).
    - `REDIS_URL`, the internal connection string of `grouplink-cache`.
-   - `RENDER_API_KEY` and `RENDER_STATIC_SITE_ID`, the ID you noted at step 2.
-   - `SITE_URL` and `SITE_DEFAULT_SLUG`.
+   - `SITE_URL`, the URL you noted at step 2, and `SITE_DEFAULT_SLUG`.
    - `DRY_RUN=true` for the first deploy, so a misconfigured run can't publish.
      The default is `false`.
 
-   Optional: `SLACK_WEBHOOK_URL`, plus `GITHUB_BRANCH`, `SITE_DIR`,
-   `METADATA_TTL_SECONDS`, and `LINKS_LIMIT` if the defaults don't suit.
+   Optional: `SLACK_WEBHOOK_URL`, plus `METADATA_TTL_SECONDS` and `LINKS_LIMIT`
+   if the defaults don't suit.
 
    Confirm the tasks appear on the service's Tasks page and note the slug.
 
@@ -363,10 +326,8 @@ while `WORKFLOW_SLUG` is empty, and step 5 is what fixes it.
    it. Leave `NOTION_WEBHOOK_SECRET` unset for now.
 6. Create the Notion subscription and finish the handshake. See
    [The Notion subscription](#the-notion-subscription).
-7. Remove `DRY_RUN` or set it to `false`, then edit a row in Notion.
-
-`autoDeploy` is off on the static site because the workflow triggers its deploy
-itself, right after committing.
+7. Remove `DRY_RUN` or set it to `false`, then edit a row in Notion. Until the
+   first run writes the snapshot, the page answers 503.
 
 ### The Notion subscription
 
@@ -507,7 +468,7 @@ lint, formatting, and types.
 
 Every step is a published task from
 [render-tasks-python](https://github.com/render-lab/render-tasks-python),
-installed from PyPI: `render-lab-tasks-{notion,scrape,render-kv,http,github,render,slack}`
+installed from PyPI: `render-lab-tasks-{notion,scrape,render-kv,http,slack}`
 and `render-lab-triggers`. All of them pin `render==1.0.1` exactly, so don't
 upgrade the SDK on its own.
 
