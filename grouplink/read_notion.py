@@ -34,7 +34,7 @@ class NotionSite:
     #: The raw link rows, which the skip report reads.
     link_pages: list[PageDTO]
     profiles: list[ProfileRow]
-    #: One page per profile, except a profile with a reserved slug. Each page holds
+    #: One page per profile whose slug the web service can serve. Each page holds
     #: its visible rows, in `Order`.
     pages: list[ProfilePage]
 

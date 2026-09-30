@@ -227,18 +227,42 @@ def to_profile_rows(pages: list[PageDTO]) -> list[ProfileRow]:
 RESERVED_SLUGS = frozenset({"assets", "healthz", "tasks", "webhooks"})
 
 
+def _slug_problem(slug: str) -> str:
+    """Why the web service cannot serve this slug, or "" when it can."""
+    if slug in RESERVED_SLUGS:
+        return "is reserved for the web service"
+    if "/" in slug:
+        return 'contains "/"'
+    return ""
+
+
+def _split_profiles(profiles: list[ProfileRow]) -> tuple[list[ProfileRow], list[SkippedRow]]:
+    """The profiles that get a page, and a skipped row for each other profile. The
+    first profile with a slug gets it.
+    """
+    servable: list[ProfileRow] = []
+    skipped: list[SkippedRow] = []
+    taken: set[str] = set()
+    for profile in profiles:
+        problem = _slug_problem(profile.slug)
+        if not problem and profile.slug in taken:
+            problem = "is already used by another profile"
+        if problem:
+            skipped.append(SkippedRow(profile.name, "", f'Slug "{profile.slug}" {problem}'))
+        else:
+            taken.add(profile.slug)
+            servable.append(profile)
+    return servable, skipped
+
+
 def servable_profiles(profiles: list[ProfileRow]) -> list[ProfileRow]:
-    """The profiles whose slug the web service can serve as a page."""
-    return [profile for profile in profiles if profile.slug not in RESERVED_SLUGS]
+    """The profiles the web service serves as a page, one per slug."""
+    return _split_profiles(profiles)[0]
 
 
-def reserved_profiles(profiles: list[ProfileRow]) -> list[SkippedRow]:
-    """A profile whose slug is reserved gets no page. Reported with the skipped rows."""
-    return [
-        SkippedRow(profile.name, "", f'Slug "{profile.slug}" is reserved for the web service')
-        for profile in profiles
-        if profile.slug in RESERVED_SLUGS
-    ]
+def unservable_profiles(profiles: list[ProfileRow]) -> list[SkippedRow]:
+    """Why each other profile gets no page. Reported with the skipped rows."""
+    return _split_profiles(profiles)[1]
 
 
 def group_by_profile(rows: list[LinkRow], profiles: list[ProfileRow]) -> list[ProfilePage]:
@@ -273,6 +297,9 @@ def assert_default_slug(profiles: list[ProfileRow], default_slug: str) -> None:
     A slug that matches no profile would publish a site with no root page, so every
     caller that renders pages checks it before it renders anything.
     """
+    problem = _slug_problem(default_slug)
+    if problem:
+        raise ValueError(f'SITE_DEFAULT_SLUG "{default_slug}" {problem}')
     if not any(profile.slug == default_slug for profile in profiles):
         raise ValueError(
             f'SITE_DEFAULT_SLUG is "{default_slug}", which matches no Slug in the Profiles database'

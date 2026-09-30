@@ -12,7 +12,7 @@ from starlette.testclient import TestClient
 
 from grouplink.notion_webhook import NotionWebhook
 from grouplink.site_store import SiteStore
-from grouplink.webhook import build_app, create_app
+from grouplink.webhook import MAX_BODY_BYTES, build_app, create_app
 
 
 class Dispatcher:
@@ -55,9 +55,15 @@ def test_sends_no_body_with_a_204(client: TestClient) -> None:
     assert response.content == b""
 
 
-def test_delegates_the_health_check_to_the_dispatch_server(client: TestClient) -> None:
+def test_answers_the_health_check(client: TestClient) -> None:
     response = client.get("/healthz")
     assert (response.status_code, response.text) == (200, "ok")
+    assert client.head("/healthz").status_code == 200
+
+
+def test_refuses_a_notion_body_over_the_limit(client: TestClient) -> None:
+    response = client.post("/webhooks/notion", content=b"x" * (MAX_BODY_BYTES + 1))
+    assert response.status_code == 413
 
 
 def test_delegates_an_unauthenticated_task_dispatch(client: TestClient) -> None:

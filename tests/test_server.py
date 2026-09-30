@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -187,6 +188,9 @@ def test_serves_the_assets_with_their_content_types(app: App) -> None:
     assert font.headers["cache-control"] == "public, max-age=31536000, immutable"
 
     assert app.client.get("/assets/nothing.png").status_code == 404
+    missing_font = app.client.get("/assets/fonts/nothing.woff2")
+    assert missing_font.status_code == 404
+    assert "immutable" not in missing_font.headers.get("cache-control", "")
 
 
 def test_answers_a_head_request(app: App) -> None:
@@ -206,11 +210,54 @@ async def test_starts_another_rebuild_when_the_key_stays_missing() -> None:
         clock=lambda: now[0],
     )
 
-    await store.snapshot()
-    now[0] = REBUILD_RETRY_SECONDS - 1
-    await store.snapshot()
+    async def request_at(time: float) -> None:
+        now[0] = time
+        await store.snapshot()
+        await asyncio.sleep(0)  # Let the rebuild task run.
+
+    await request_at(0)
+    await request_at(REBUILD_RETRY_SECONDS - 1)
     assert len(dispatcher.calls) == 1
 
-    now[0] = REBUILD_RETRY_SECONDS + 1
-    await store.snapshot()
+    await request_at(REBUILD_RETRY_SECONDS + 1)
     assert len(dispatcher.calls) == 2
+
+
+async def test_does_not_wait_for_the_rebuild_to_start() -> None:
+    """The Render API call can be slow, and a request must not wait on it."""
+    release = asyncio.Event()
+    calls: list[str] = []
+
+    async def rebuild() -> None:
+        calls.append("start")
+        await release.wait()
+
+    store = SiteStore(read=FakeKv(None).read, rebuild=rebuild)
+    assert await asyncio.wait_for(store.snapshot(), timeout=1) is None
+    await asyncio.sleep(0)
+    assert calls == ["start"]
+    release.set()
+
+
+async def test_keeps_the_newer_snapshot_when_an_older_read_finishes_last() -> None:
+    old, new = snapshot(shifra=ALEX), snapshot()
+    slow_read_done = asyncio.Event()
+    values = [old, new]
+
+    async def read() -> str:
+        if not values:
+            raise ConnectionError("Key Value is down")
+        value = values.pop(0)
+        if value is old:
+            await slow_read_done.wait()
+        return value
+
+    store = SiteStore(read=read, rebuild=Dispatcher().start)
+    slow = asyncio.create_task(store.snapshot())
+    await asyncio.sleep(0)
+    fast = await store.snapshot()
+    slow_read_done.set()
+    await slow
+
+    # The read fails, so the store answers with its last good copy.
+    assert await store.snapshot() == fast

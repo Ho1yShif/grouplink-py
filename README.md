@@ -143,9 +143,11 @@ set is redundant, not contradictory, and a row with neither renders nowhere.
 A profile's page is served at `/<slug>`. The profile named by `SITE_DEFAULT_SLUG`
 is served at `/` as well.
 
-The slugs `assets`, `healthz`, `tasks`, and `webhooks` are reserved for the web
-service's own routes. The run skips a profile with one of them and lists it with
-the skipped rows.
+The run skips a profile and lists it with the skipped rows when its slug:
+
+- is `assets`, `healthz`, `tasks`, or `webhooks`, which the web service uses for its own routes.
+- contains `/`.
+- is already used by another profile. The first profile Notion returns keeps the slug.
 
 `Icon` is matched case-insensitively against the nine names in
 `grouplink/icons.py`: `arrow`, `credits`, `download`, `email`, `form`, `info`,

@@ -6,7 +6,7 @@ Value, and it is the only thing that starts a rebuild.
 
 render-lab-triggers can mount webhook adapters, but an adapter's `map()` result is
 dispatched immediately, so the debounce cannot live inside one. This uses the package
-for the dispatcher, the health check, and the task route, and handles the rest itself.
+for the dispatcher and the task route, and handles the rest itself.
 """
 
 from __future__ import annotations
@@ -49,6 +49,10 @@ NOT_FOUND_HTML = (
     '<body><p>There is no page here. <a href="/">Go to the links page</a>.</p></body></html>'
 )
 
+#: Largest Notion webhook body the service reads. The same limit as the
+#: render-lab-triggers task route.
+MAX_BODY_BYTES = 1_048_576
+
 #: Seconds a client waits before it asks again while there is no site to serve.
 RETRY_AFTER_SECONDS = 60
 
@@ -69,7 +73,7 @@ class SecurityHeaders:
                 headers = MutableHeaders(scope=message)
                 headers["X-Content-Type-Options"] = "nosniff"
                 headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-                if scope["path"].startswith("/assets/fonts/"):
+                if message["status"] == 200 and scope["path"].startswith("/assets/fonts/"):
                     headers["Cache-Control"] = "public, max-age=31536000, immutable"
             await send(message)
 
@@ -84,10 +88,9 @@ def create_app(
     store: SiteStore,
     on_shutdown: Callable[[], Awaitable[None]] | None = None,
 ) -> Starlette:
-    """GET /healthz and POST /tasks/:task come from render-lab-triggers. The task
-    route is how you force a rebuild or run a dry run with custom input from the
-    command line. Passing the dispatcher in means every route starts runs through
-    the same client.
+    """POST /tasks/:task comes from render-lab-triggers. It is how you force a
+    rebuild or run a dry run with custom input from the command line. Passing the
+    dispatcher in means every route starts runs through the same client.
     """
     dispatch_server = create_dispatch_server(workflow_slug=workflow_slug, dispatcher=dispatcher)
 
@@ -111,11 +114,17 @@ def create_app(
             return Response(status_code=304, headers=headers)
         return HTMLResponse(rendered.html, headers=headers)
 
+    async def healthz(_request: Request) -> Response:
+        return PlainTextResponse("ok")
+
     async def notion(request: Request) -> Response:
+        body = await _read_body(request, MAX_BODY_BYTES)
+        if body is None:
+            return JSONResponse({"error": "payload too large"}, status_code=413)
         result = webhook.handle(
             WebhookRequest(
                 headers={key.lower(): value for key, value in request.headers.items()},
-                raw_body=(await request.body()).decode("utf-8", errors="replace"),
+                raw_body=body.decode("utf-8", errors="replace"),
             )
         )
         if result.body is None:
@@ -131,7 +140,7 @@ def create_app(
     return Starlette(
         routes=[
             Route("/", page, methods=["GET"]),
-            Route("/healthz", dispatch_server, methods=["GET"]),
+            Route("/healthz", healthz, methods=["GET"]),
             Route("/tasks/{task}", dispatch_server, methods=["POST"]),
             Route("/webhooks/notion", notion, methods=["POST"]),
             Mount("/assets", StaticFiles(directory=ASSETS_DIR)),
@@ -141,6 +150,18 @@ def create_app(
         middleware=[Middleware(SecurityHeaders)],
         lifespan=lifespan,
     )
+
+
+async def _read_body(request: Request, limit: int) -> bytes | None:
+    """The request body, or None when it is longer than `limit` bytes."""
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _etag_matches(if_none_match: str, etag: str) -> bool:

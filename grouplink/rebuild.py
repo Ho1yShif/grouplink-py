@@ -33,11 +33,11 @@ from grouplink.links import (
     card_description,
     fetchable_urls,
     meta_cache_key,
-    reserved_profiles,
     skipped_rows,
     to_card,
     unique_urls,
     unknown_icons,
+    unservable_profiles,
 )
 from grouplink.page import PageModel
 from grouplink.read_notion import read_notion_site
@@ -208,7 +208,7 @@ def _report_notion_problems(
     reaches no page, and an Icon option no file matches. Both are otherwise silent.
     Returns the skipped rows, which the run reports as part of its result.
     """
-    skipped = skipped_rows(link_pages, profiles) + reserved_profiles(profiles)
+    skipped = skipped_rows(link_pages, profiles) + unservable_profiles(profiles)
     for row in skipped:
         log.info('skipped "%s": %s', row.title, row.reason)
     for name in unknown_icons(link_pages):

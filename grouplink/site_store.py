@@ -7,6 +7,7 @@ the page down. Renders each page once per snapshot.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import time
@@ -49,11 +50,19 @@ class SiteStore:
         self._clock = clock
         #: Clock time of the last rebuild this store started. None when there is none.
         self._rebuild_started_at: float | None = None
+        #: Kept so the task is not garbage collected before it finishes.
+        self._rebuild_task: asyncio.Task[None] | None = None
+        #: Number of reads started, and the number of the read that set _last_good.
+        #: A slow read that finishes after a newer one must not replace its result.
+        self._reads = 0
+        self._last_good_read = 0
         #: (snapshot hash, slug, footer year) -> page. Holds one snapshot's pages.
         self._rendered: dict[tuple[str, str, int], RenderedPage] = {}
 
     async def snapshot(self) -> Snapshot | None:
         """The current snapshot, or the last good one. None when there is neither."""
+        self._reads += 1
+        read_number = self._reads
         try:
             raw = await self._read()
         except Exception as error:
@@ -61,7 +70,7 @@ class SiteStore:
             return self._last_good
 
         if raw is None:
-            await self._start_rebuild()
+            self._start_rebuild()
             return self._last_good
 
         try:
@@ -70,9 +79,11 @@ class SiteStore:
             log.error("could not read the site snapshot: %s", error)
             return self._last_good
 
-        if self._last_good is None or self._last_good.hash != snapshot.hash:
-            self._rendered.clear()
-        self._last_good = snapshot
+        if read_number > self._last_good_read:
+            if self._last_good is None or self._last_good.hash != snapshot.hash:
+                self._rendered.clear()
+            self._last_good = snapshot
+            self._last_good_read = read_number
         self._rebuild_started_at = None
         return snapshot
 
@@ -91,15 +102,19 @@ class SiteStore:
             self._rendered[key] = page
         return page
 
-    async def _start_rebuild(self) -> None:
+    def _start_rebuild(self) -> None:
         """One run per missing key every REBUILD_RETRY_SECONDS. A new Key Value
-        instance, or a lost key, starts the rebuild that writes it.
+        instance, or a lost key, starts the rebuild that writes it. The request does
+        not wait for the Render API call.
         """
         now = self._clock()
         started_at = self._rebuild_started_at
         if started_at is not None and now - started_at < REBUILD_RETRY_SECONDS:
             return
         self._rebuild_started_at = now
+        self._rebuild_task = asyncio.create_task(self._run_rebuild())
+
+    async def _run_rebuild(self) -> None:
         try:
             await self._rebuild()
             log.info("the site key is missing, so a rebuild started")

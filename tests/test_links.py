@@ -11,6 +11,7 @@ from grouplink.links import (
     fetchable_urls,
     group_by_profile,
     meta_cache_key,
+    servable_profiles,
     skipped_rows,
     to_icon_name,
     to_link_rows,
@@ -18,6 +19,7 @@ from grouplink.links import (
     unique_urls,
     unknown_icons,
     unnumbered_last,
+    unservable_profiles,
     visible_rows,
 )
 
@@ -251,6 +253,34 @@ class TestAssertDefaultSlug:
     def test_names_the_slug_that_matches_nobody(self) -> None:
         with pytest.raises(ValueError, match="SITE_DEFAULT_SLUG"):
             assert_default_slug(to_profile_rows(PROFILES), "nobody")
+
+    def test_names_a_reserved_slug_as_reserved(self) -> None:
+        with pytest.raises(ValueError, match='SITE_DEFAULT_SLUG "assets" is reserved'):
+            assert_default_slug(to_profile_rows(PROFILES), "assets")
+
+
+class TestServableProfiles:
+    PROFILES = to_profile_rows(
+        [
+            *PROFILES,
+            page({"Slug": "tasks"}, "Tasks", id="profile-tasks"),
+            page({"Slug": "a/b"}, "Slash", id="profile-slash"),
+            page({"Slug": "Shifra"}, "Second Shifra", id="profile-shifra-2"),
+        ]
+    )
+
+    def test_keeps_the_first_profile_with_each_servable_slug(self) -> None:
+        assert [p.id for p in servable_profiles(self.PROFILES)] == [
+            "profile-shifra",
+            "profile-alex",
+        ]
+
+    def test_names_why_each_other_profile_gets_no_page(self) -> None:
+        assert [(row.title, row.reason) for row in unservable_profiles(self.PROFILES)] == [
+            ("Tasks", 'Slug "tasks" is reserved for the web service'),
+            ("Slash", 'Slug "a/b" contains "/"'),
+            ("Second Shifra", 'Slug "shifra" is already used by another profile'),
+        ]
 
 
 def test_meta_cache_key_is_versioned() -> None:
