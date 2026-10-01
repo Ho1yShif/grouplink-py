@@ -27,6 +27,7 @@ dev = [
     "pytest-socket>=0.7",
     "ruff>=0.9",
     "python-dotenv>=1.2.3",
+    "httpx2>=2.13.1",
 ]
 
 [build-system]
@@ -64,3 +65,4 @@ disable_error_code = ["arg-type", "misc", "no-untyped-def", "type-arg"]
 asyncio_mode = "auto"
 addopts = "--disable-socket --allow-unix-socket"
 testpaths = ["tests"]
+filterwarnings = ["error"]
