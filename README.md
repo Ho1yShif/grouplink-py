@@ -250,8 +250,11 @@ load Manrope and Roboto Mono instead — the fallback chain already names them.
 Assets are referenced from the site root (`/assets/…`) so they resolve the same
 from `/` and from `/<slug>/`. The web service serves them from `grouplink/assets/`.
 
-Every response carries `X-Content-Type-Options: nosniff` and
-`Referrer-Policy: strict-origin-when-cross-origin`. The fonts are cached for a
+Every response carries `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: strict-origin-when-cross-origin`,
+`Strict-Transport-Security: max-age=31536000; includeSubDomains`,
+`Content-Security-Policy: frame-ancestors 'none'`, and `X-Frame-Options: DENY`.
+The page sets the rest of its CSP in a meta tag. The fonts are cached for a
 year. A page response has `Cache-Control: no-cache` and an `ETag`, so a browser
 revalidates on each visit and gets a 304 when nothing changed.
 
