@@ -345,6 +345,7 @@ dependencies = [
     { name = "render-lab-tasks-slack" },
     { name = "render-lab-triggers" },
     { name = "starlette" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -371,6 +372,7 @@ requires-dist = [
     { name = "render-lab-tasks-slack", specifier = "==0.1.1" },
     { name = "render-lab-triggers", specifier = "==0.1.0" },
     { name = "starlette", specifier = "==1.7.0" },
+    { name = "uvicorn", specifier = "==0.53.0" },
 ]
 
 [package.metadata.requires-dev]
