@@ -96,6 +96,8 @@ class NotionWebhook:
         self._secret = secret
         self._debounce_ms = debounce_ms
         self._pending: asyncio.Task[None] | None = None
+        #: The dispatch that left the quiet period and has not returned yet.
+        self._dispatching: asyncio.Task[None] | None = None
 
     def _schedule(self) -> None:
         if self._pending is not None:
@@ -108,14 +110,33 @@ class NotionWebhook:
         except asyncio.CancelledError:
             return
         self._pending = None
+        self._dispatching = asyncio.current_task()
+        try:
+            await self._dispatch_now()
+        finally:
+            self._dispatching = None
+
+    async def _dispatch_now(self) -> None:
         try:
             started = await self._dispatch(self._task, [{}])
             log.info("dispatched %s (%s)", self._task, started.get("runId"))
         except Exception as error:
             log.error("dispatch failed: %s", error)
 
+    async def flush(self) -> None:
+        """Start the waiting run now, and wait for a dispatch already in flight.
+        For shutdown, so a deploy inside the quiet period does not drop the edit.
+        """
+        dispatching = self._dispatching
+        if dispatching is not None:
+            await dispatching
+        pending, self._pending = self._pending, None
+        if pending is not None:
+            pending.cancel()
+            await self._dispatch_now()
+
     async def drain(self) -> None:
-        """Await the pending dispatch, if there is one. For tests and shutdown."""
+        """Await the pending dispatch, if there is one. For tests."""
         pending = self._pending
         if pending is not None:
             try:
@@ -147,6 +168,6 @@ class NotionWebhook:
 
         self._schedule()
         # Not a run ID: the run does not exist yet, and will not for debounce_ms. A
-        # restart inside that window drops the pending dispatch, and Notion's retries
-        # do not cover it, because this answer was already a success.
+        # deploy inside that window starts the run at shutdown. A crash drops it, and
+        # Notion's retries do not cover it, because this answer was already a success.
         return WebhookResponse(202, {"scheduled": True})

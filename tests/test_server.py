@@ -199,6 +199,16 @@ def test_answers_a_head_request(app: App) -> None:
     assert response.content == b""
 
 
+def test_starts_the_pending_rebuild_when_the_service_shuts_down() -> None:
+    app = App(snapshot())
+    with app.client as client:
+        response = client.post("/webhooks/notion", json={"type": "page.created"})
+        assert response.status_code == 202
+        assert app.dispatcher.calls == []
+
+    assert app.dispatcher.calls == [("grouplink.rebuild", [{}])]
+
+
 async def test_starts_another_rebuild_when_the_key_stays_missing() -> None:
     """The first run can fail or be a dry run, so the page must not stay at 503."""
     now = [0.0]

@@ -134,6 +134,9 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_app: Starlette) -> AsyncIterator[None]:
         yield
+        # Render stops the old instance on every deploy. Start the waiting run now,
+        # or the edit that scheduled it is lost.
+        await webhook.flush()
         if on_shutdown is not None:
             await on_shutdown()
 

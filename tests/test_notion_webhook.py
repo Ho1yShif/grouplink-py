@@ -129,6 +129,50 @@ class TestNotionWebhook:
         assert s.signed_post(event("page.created")).status == 202
         await s.settle()
 
+    async def test_flush_starts_the_waiting_run_without_the_quiet_period(self) -> None:
+        s = Setup()
+        s.signed_post(event("page.created"))
+
+        await s.webhook.flush()
+        assert s.dispatch.calls == [(TASK, [{}])]
+
+        # The cancelled timer must not start a second run.
+        await s.settle()
+        assert s.dispatch.calls == [(TASK, [{}])]
+
+    async def test_flush_does_nothing_when_no_run_is_waiting(self) -> None:
+        s = Setup()
+        await s.webhook.flush()
+        assert s.dispatch.calls == []
+
+        s.signed_post(event("page.created"))
+        await s.settle()
+        await s.webhook.flush()
+        assert len(s.dispatch.calls) == 1
+
+    async def test_flush_waits_for_a_dispatch_already_in_flight(self) -> None:
+        release = asyncio.Event()
+        calls: list[str] = []
+
+        async def slow(task: str, args: list[Any]) -> dict[str, str]:
+            calls.append(task)
+            await release.wait()
+            return {"runId": "run-1"}
+
+        s = Setup(dispatch=slow)
+        s.signed_post(event("page.created"))
+        # Past the quiet period, so the dispatch has started and is blocked.
+        await asyncio.sleep(DEBOUNCE_MS / 1000 * 2)
+        assert calls == [TASK]
+
+        flush = asyncio.create_task(s.webhook.flush())
+        await asyncio.sleep(0)
+        assert not flush.done()
+
+        release.set()
+        await flush
+        assert calls == [TASK]
+
 
 @pytest.mark.parametrize(
     "type",

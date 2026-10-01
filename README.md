@@ -51,6 +51,8 @@ missing.
 A run starts when someone edits Notion. `grouplink-webhook-py` verifies Notion's signature, drops the event types that can't
 change a page, and waits 60 seconds of quiet before dispatching
 `grouplink.rebuild`. Editing eight rows in one sitting gives you one run.
+A deploy inside the 60 seconds starts the waiting run as the old instance shuts
+down. A crash inside the 60 seconds loses it, and the next edit starts a run.
 
 There is no schedule. The run is also what health-checks every link, so a link
 that rots is only reported the next time someone edits Notion.
