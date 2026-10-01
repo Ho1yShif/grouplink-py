@@ -172,10 +172,22 @@ def test_changes_the_etag_when_the_page_changes(app: App) -> None:
 
 
 def test_sets_the_security_headers_on_every_response(app: App) -> None:
-    for path in ("/", "/nobody", "/healthz", "/assets/render-logomark-black.svg"):
-        response = app.client.get(path)
+    responses = [
+        (path, app.client.get(path))
+        for path in ("/", "/nobody", "/healthz", "/assets/render-logomark-black.svg")
+    ]
+    responses.append(("503", App(None).client.get("/")))
+
+    for path, response in responses:
         assert response.headers["x-content-type-options"] == "nosniff", path
         assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin", path
+        assert (
+            response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+        ), path
+        # Only frame-ancestors. The page's meta CSP covers everything else, and a
+        # second style-src here would block its hashed inline style.
+        assert response.headers["content-security-policy"] == "frame-ancestors 'none'", path
+        assert response.headers["x-frame-options"] == "DENY", path
 
 
 def test_serves_the_assets_with_their_content_types(app: App) -> None:

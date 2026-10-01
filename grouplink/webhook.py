@@ -58,7 +58,11 @@ RETRY_AFTER_SECONDS = 60
 
 
 class ResponseHeaders:
-    """Security headers on every response, plus a one-year cache on the fonts."""
+    """Security headers on every response, plus a one-year cache on the fonts.
+
+    The page sets the rest of its Content-Security-Policy in a meta tag. A meta tag
+    cannot set frame-ancestors, so that one directive is a header.
+    """
 
     def __init__(self, app: ASGIApp) -> None:
         self._app = app
@@ -73,6 +77,9 @@ class ResponseHeaders:
                 headers = MutableHeaders(scope=message)
                 headers["X-Content-Type-Options"] = "nosniff"
                 headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+                headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+                headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+                headers["X-Frame-Options"] = "DENY"
                 if message["status"] == 200 and scope["path"].startswith("/assets/fonts/"):
                     headers["Cache-Control"] = "public, max-age=31536000, immutable"
             await send(message)
