@@ -217,8 +217,6 @@ body {
   mask: url('/assets/render-logo-white.png') center / contain no-repeat;
 }
 
-.links { border-top: 1px solid var(--border); }
-
 .card {
   display: grid;
   grid-template-columns: 32px 1fr;

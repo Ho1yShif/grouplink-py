@@ -1,9 +1,8 @@
 """Renderer tests, including the golden pages.
 
-The golden fixtures are byte-for-byte copies of the three pages the TypeScript
-build rendered from the seed links in scripts/placeholder.py. They guard the four
-places a port can drift: the HTML escaping, the URL normalization, the CSP
-hashes, and the whitespace.
+The golden fixtures are the three pages render_page produces from the seed links
+in scripts/placeholder.py. They guard the four places the renderer can drift: the
+HTML escaping, the URL normalization, the CSP hashes, and the whitespace.
 """
 
 from __future__ import annotations

@@ -461,10 +461,11 @@ curl -X POST https://grouplink-webhook-py.onrender.com/tasks/grouplink.rebuild \
 - `RUN_LIVE=1 uv run pytest tests/test_rebuild_live.py --enable-socket` — Tier 2.
   Hits real Notion, real sites, and a real Key Value instance in dry-run.
 
-`tests/golden/` holds the three pages the TypeScript build rendered from the seed
-links in `scripts/placeholder.py`. `tests/test_page.py` renders them again from
-that same seed data and asserts byte equality, which is what keeps the HTML escaping, the URL normalization, the CSP
-hashes, and the whitespace from drifting.
+`tests/golden/` holds the three pages `render_page` produces from the seed links
+in `scripts/placeholder.py`. `tests/test_page.py` renders them again and asserts
+byte equality, so the HTML escaping, the URL normalization, the CSP hashes, and
+the whitespace cannot drift. After a change to `page.py`, regenerate the
+fixtures and read the diff before you commit it.
 
 `uv run ruff check .`, `uv run ruff format --check .`, and `uv run mypy` cover
 lint, formatting, and types.
