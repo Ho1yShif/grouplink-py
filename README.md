@@ -80,12 +80,7 @@ render workflows tasks list --local
 render workflows start grouplink.rebuild --local --input='[{"dryRun":true}]'
 ```
 
-`uv sync` installs from `uv.lock`. `requirements.txt` is the export Render builds
-from, so regenerate it whenever a dependency changes:
-
-```bash
-uv export --frozen --no-dev --no-emit-project -o requirements.txt
-```
+`uv sync` installs from `uv.lock`. Render builds both services from the same file.
 
 ### Previewing the page
 
@@ -311,9 +306,8 @@ while `WORKFLOW_SLUG` is empty, and step 5 is what fixes it.
    (`grouplink-webhook-py`). Leave `WORKFLOW_SLUG` blank when it prompts. Note the
    web service's URL. The button reads `render.yaml` from `main`, so push first.
 3. Dashboard → **New > Workflow** on the same repo.
-   Build: `pip install -r requirements.txt`. Start: `python -m grouplink.main`.
-   Render's Python image does not ship `uv`, so the build installs from the
-   exported requirements file.
+   Build: `uv sync --locked --no-dev --no-install-project`.
+   Start: `uv run --no-sync python -m grouplink.main`.
 4. Set the [Configuration](#configuration) vars on the Workflow. The webhook
    receiver's table doesn't apply here. Required:
    - `NOTION_TOKEN`, `NOTION_LINKS_DATABASE_ID`, `NOTION_PROFILES_DATABASE_ID`.

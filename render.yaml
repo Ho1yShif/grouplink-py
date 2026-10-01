@@ -20,10 +20,10 @@ projects:
             runtime: python
             plan: starter
             region: oregon
-            # Render's Python image does not ship uv, so the build installs from
-            # requirements.txt, which `uv export` regenerates.
-            buildCommand: pip install -r requirements.txt
-            startCommand: python -m grouplink.webhook
+            # Render installs uv because uv.lock is in the repo root. --locked
+            # fails the build when uv.lock does not match pyproject.toml.
+            buildCommand: uv sync --locked --no-dev --no-install-project
+            startCommand: uv run --no-sync python -m grouplink.webhook
             healthCheckPath: /healthz
             # One instance. The debounce timer and the missing-key retry live in
             # memory, so a second instance would start duplicate runs.
