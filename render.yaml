@@ -25,6 +25,9 @@ projects:
             buildCommand: pip install -r requirements.txt
             startCommand: python -m grouplink.webhook
             healthCheckPath: /healthz
+            # One instance. The debounce timer and the missing-key retry live in
+            # memory, so a second instance would start duplicate runs.
+            numInstances: 1
             autoDeployTrigger: commit
             envVars:
               - key: RENDER_API_KEY
