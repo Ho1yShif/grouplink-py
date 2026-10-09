@@ -105,7 +105,7 @@ def test_answers_an_unknown_slug_with_a_404_page(app: App) -> None:
 
 
 def test_answers_a_reserved_slug_with_a_404_page(app: App) -> None:
-    for path in ("/tasks", "/webhooks", "/assets"):
+    for path in ("/tasks", "/webhooks", "/assets", "/links/assets"):
         assert app.client.get(path).status_code == 404, path
 
 
@@ -190,17 +190,18 @@ def test_sets_the_security_headers_on_every_response(app: App) -> None:
         assert response.headers["x-frame-options"] == "DENY", path
 
 
-def test_serves_the_assets_with_their_content_types(app: App) -> None:
-    svg = app.client.get("/assets/render-logomark-black.svg")
+@pytest.mark.parametrize("prefix", ["/assets", "/links/assets"])
+def test_serves_the_assets_with_their_content_types(app: App, prefix: str) -> None:
+    svg = app.client.get(f"{prefix}/render-logomark-black.svg")
     assert svg.status_code == 200
     assert svg.headers["content-type"].startswith("image/svg+xml")
 
-    font = app.client.get("/assets/fonts/RoobertVF.woff2")
+    font = app.client.get(f"{prefix}/fonts/RoobertVF.woff2")
     assert font.status_code == 200
     assert font.headers["cache-control"] == "public, max-age=31536000, immutable"
 
-    assert app.client.get("/assets/nothing.png").status_code == 404
-    missing_font = app.client.get("/assets/fonts/nothing.woff2")
+    assert app.client.get(f"{prefix}/nothing.png").status_code == 404
+    missing_font = app.client.get(f"{prefix}/fonts/nothing.woff2")
     assert missing_font.status_code == 404
     assert "immutable" not in missing_font.headers.get("cache-control", "")
 

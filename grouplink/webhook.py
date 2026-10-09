@@ -43,6 +43,12 @@ log = logging.getLogger(__name__)
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
+# render.com proxies /links/* here and removes /links, so the pages ask for
+# /links/assets/ and this service gets /assets/. A direct visit to the
+# onrender.com URL asks for /links/assets/, so the service serves both paths.
+ASSET_PATHS = ("/assets", "/links/assets")
+FONT_PATHS = tuple(f"{path}/fonts/" for path in ASSET_PATHS)
+
 NOT_FOUND_HTML = (
     '<!doctype html><html lang="en"><head><meta charset="utf-8">'
     "<title>Not found</title></head>"
@@ -80,7 +86,7 @@ class ResponseHeaders:
                 headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
                 headers["Content-Security-Policy"] = "frame-ancestors 'none'"
                 headers["X-Frame-Options"] = "DENY"
-                if message["status"] == 200 and scope["path"].startswith("/assets/fonts/"):
+                if message["status"] == 200 and scope["path"].startswith(FONT_PATHS):
                     headers["Cache-Control"] = "public, max-age=31536000, immutable"
             await send(message)
 
@@ -153,7 +159,7 @@ def create_app(
             Route("/healthz", healthz, methods=["GET"]),
             Route("/tasks/{task}", dispatch_server, methods=["POST"]),
             Route("/webhooks/notion", notion, methods=["POST"]),
-            Mount("/assets", StaticFiles(directory=ASSETS_DIR)),
+            *(Mount(path, StaticFiles(directory=ASSETS_DIR)) for path in ASSET_PATHS),
             Route("/{slug}", page, methods=["GET"]),
             Route("/{slug}/", page, methods=["GET"]),
         ],

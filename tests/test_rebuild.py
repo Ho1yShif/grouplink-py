@@ -428,16 +428,16 @@ class TestRebuild:
         assert len(h.scraped) == 3
         assert len(h.checked) == 3
 
-    async def test_references_assets_from_the_site_root(self, env: Any) -> None:
+    async def test_references_assets_under_links(self, env: Any) -> None:
         h = harness()
         await rebuild.func(h.ctx, {})
 
         html = h.html("alex")
-        assert 'href="/assets/render-logomark-black.svg"' in html
-        assert "url('/assets/render-logo-white.png')" in html
-        assert "url('/assets/icons/github.svg')" in html
-        assert "url('/assets/fonts/RoobertVF.woff2')" in html
-        assert not [m for m in ('"assets/', "'assets/", "(assets/") if m in html]
+        assert 'href="/links/assets/render-logomark-black.svg"' in html
+        assert "url('/links/assets/render-logo-white.png')" in html
+        assert "url('/links/assets/icons/github.svg')" in html
+        assert "url('/links/assets/fonts/RoobertVF.woff2')" in html
+        assert not [m for m in ('"assets/', "'assets/", "(assets/", "'/assets/") if m in html]
 
     async def test_carries_the_scraped_description_onto_the_card(self, env: Any) -> None:
         h = harness()

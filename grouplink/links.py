@@ -224,7 +224,7 @@ def to_profile_rows(pages: list[PageDTO]) -> list[ProfileRow]:
 
 
 #: First path segments the web service routes itself, so no profile can use them.
-RESERVED_SLUGS = frozenset({"assets", "healthz", "tasks", "webhooks"})
+RESERVED_SLUGS = frozenset({"assets", "healthz", "links", "tasks", "webhooks"})
 
 
 def _slug_problem(slug: str) -> str:

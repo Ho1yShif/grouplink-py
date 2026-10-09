@@ -142,7 +142,7 @@ is served at `/` as well.
 
 The run skips a profile and lists it with the skipped rows when its slug:
 
-- is `assets`, `healthz`, `tasks`, or `webhooks`, which the web service uses for its own routes.
+- is `assets`, `healthz`, `links`, `tasks`, or `webhooks`, which the web service uses for its own routes.
 - contains `/`.
 - is already used by another profile. The first profile Notion returns keeps the slug.
 
@@ -246,8 +246,11 @@ The brand woff2 files under `grouplink/assets/fonts/` are commercial faces. If t
 repo needs to stop redistributing them, delete the three `@font-face` blocks and
 load Manrope and Roboto Mono instead — the fallback chain already names them.
 
-Assets are referenced from the site root (`/assets/…`) so they resolve the same
-from `/` and from `/<slug>/`. The web service serves them from `grouplink/assets/`.
+The pages reference assets at `/links/assets/…`, because render.com serves the
+site under `/links`. render.com removes `/links` before it forwards a request, so
+the web service gets `/assets/…`. A direct visit to the onrender.com URL asks for
+`/links/assets/…`, so the web service serves the files from `grouplink/assets/`
+at both paths.
 
 Every response carries `X-Content-Type-Options: nosniff`,
 `Referrer-Policy: strict-origin-when-cross-origin`,
