@@ -15,7 +15,7 @@ dependencies = [
     "render-lab-triggers==0.1.0",
     "starlette==1.7.0",
     "redis==6.4.0",
-    "uvicorn==0.53.0",
+    "uvicorn==0.54.0",
 ]
 
 [dependency-groups]
