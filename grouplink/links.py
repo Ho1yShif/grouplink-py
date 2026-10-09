@@ -23,7 +23,7 @@ class LinkRow:
     everyone: bool
     #: Notion page ids of the Profiles rows this link belongs to.
     profile_ids: list[str]
-    #: Which file under grouplink/assets/link-icons the card draws.
+    #: Which file under link/assets/link-icons the card draws.
     icon: IconName
     #: The `Order` cell. None when the cell is empty or holds no number.
     order: float | None

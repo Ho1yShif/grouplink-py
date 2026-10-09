@@ -40,7 +40,7 @@ class LinkCard:
     description: str
     #: `<origin>/favicon.ico`, hidden on error.
     icon_url: str
-    #: Which file under grouplink/assets/link-icons the card draws in its left column.
+    #: Which file under link/assets/link-icons the card draws in its left column.
     icon: IconName
 
 
@@ -481,7 +481,7 @@ def _render_card(card: LinkCard) -> str:
 LOGO_HREF = "https://dashboard.render.com/"
 
 # The masthead's icon row. It is the same on every page and does not come from
-# Notion. Each label needs a matching file under grouplink/assets/icons and a
+# Notion. Each label needs a matching file under link/assets/icons and a
 # .social__icon--<label> rule in STYLES.
 SOCIALS: list[SocialLink] = [
     SocialLink("YouTube", "https://www.youtube.com/@render-inc"),

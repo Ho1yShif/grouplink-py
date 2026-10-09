@@ -117,7 +117,7 @@ There are two. Links:
 | `Visible`  | checkbox | Unchecked rows are dropped.                                                               |
 | `Everyone` | checkbox | Checked puts the link on every profile's page.                                            |
 | `Profiles` | relation | Which pages the link appears on. Relate it to two rows and it appears on both.            |
-| `Icon`     | select   | Which icon the card draws. One option per file under `grouplink/assets/link-icons/`.      |
+| `Icon`     | select   | Which icon the card draws. One option per file under `link/assets/link-icons/`.           |
 | `Order`    | number   | Card position, lowest first. Ties go oldest first. Rows with no number go last. Required. |
 
 A `URL` cell is read as `https://`. A cell with no scheme, such as `render.com`,
@@ -225,7 +225,7 @@ hairlines, and purple reserved for links and focus rings.
 
 Each card is a two-column grid: an icon on the left, then the title, the scraped
 description, and the mono target line. The icon comes from the row's `Icon`
-column. The nine files under `grouplink/assets/link-icons/` are dark artwork on
+column. The nine files under `link/assets/link-icons/` are dark artwork on
 transparency, drawn as CSS masks in `var(--text-faint)` so they read on both
 backgrounds. Adding a tenth takes a file, a name in `grouplink/icons.py`, and an
 option in the Notion dropdown. The order the names are declared in decides the
@@ -239,16 +239,16 @@ The masthead is centered, with the Render wordmark above a row of social icons.
 It is the same on every page. The icons are YouTube, LinkedIn, X, GitHub, and
 Discord, and they come from `SOCIALS` in `grouplink/page.py` rather than from Notion,
 so editing that list is the only way to change the row. Each label needs a
-matching file in `grouplink/assets/icons/`. The wordmark and the icons are white files
+matching file in `link/assets/icons/`. The wordmark and the icons are white files
 drawn as CSS masks and painted with the text color, so they read on both the
 light and dark background.
 
-The brand woff2 files under `grouplink/assets/fonts/` are commercial faces. If this
+The brand woff2 files under `link/assets/fonts/` are commercial faces. If this
 repo needs to stop redistributing them, delete the three `@font-face` blocks and
 load Manrope and Roboto Mono instead — the fallback chain already names them.
 
 Assets are referenced from the site root (`/assets/…`) so they resolve the same
-from `/` and from `/<slug>/`. The web service serves them from `grouplink/assets/`.
+from `/` and from `/<slug>/`. The web service serves them from `link/assets/`.
 
 Every response carries `X-Content-Type-Options: nosniff`,
 `Referrer-Policy: strict-origin-when-cross-origin`,
