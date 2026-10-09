@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -30,8 +31,6 @@ from render_lab_tasks_render_kv.set import set_impl as kv_set_impl
 from render_lab_tasks_scrape.client import Client as ScrapePackClient
 from render_lab_tasks_scrape.client import Deps as ScrapeDeps
 from render_lab_tasks_scrape.extract_metadata import extract_metadata_impl
-from render_lab_tasks_slack.client import SlackDeps, SlackWebhook
-from render_lab_tasks_slack.post_message import post_message_impl
 
 from grouplink.links import LINK_SORTS
 from grouplink.page import render_page
@@ -44,7 +43,6 @@ ENV = {
     "SITE_DEFAULT_SLUG": "shifra",
     "SITE_URL": "https://grouplink.onrender.com",
     "NOTION_TOKEN": "notion-token",
-    "SLACK_WEBHOOK_URL": "https://hooks.slack.test/services/T/B/x",
     "DRY_RUN": "false",
 }
 
@@ -155,7 +153,6 @@ class Harness:
         self.notion_queries: dict[str, dict[str, Any]] = {}
         #: Name of every task the run dispatched, in order.
         self.tasks: list[str] = []
-        self.slack_posts: list[dict[str, Any]] = []
         self.kv = FakeKv({f"gl:meta:v1:{url}": value for url, value in fakes.cache.items()})
         if fakes.site is not None:
             self.kv._cache[SITE_KEY] = fakes.site
@@ -167,13 +164,7 @@ class Harness:
 
     def _route(self, request: httpx.Request) -> httpx.Response:
         url = request.url
-        handler = (
-            self._notion
-            if url.host == "api.notion.com"
-            else self._slack
-            if url.host == "hooks.slack.test"
-            else self._link_site
-        )
+        handler = self._notion if url.host == "api.notion.com" else self._link_site
         return handler(request)
 
     def _notion(self, request: httpx.Request) -> httpx.Response:
@@ -192,10 +183,6 @@ class Harness:
                 200, json={"results": rows, "has_more": False, "next_cursor": None}
             )
         raise AssertionError(f"no fake for Notion {request.method} {path}")
-
-    def _slack(self, request: httpx.Request) -> httpx.Response:
-        self.slack_posts.append(json.loads(request.content))
-        return httpx.Response(200, text="ok")
 
     def _link_site(self, request: httpx.Request) -> httpx.Response:
         """Both the scrape and the health check land here."""
@@ -244,9 +231,6 @@ class Harness:
             "kv.get": lambda a: kv_get_impl(self.ctx, a, deps=KvDeps(render_kv=self.kv)),
             "kv.set": lambda a: kv_set_impl(self.ctx, a, deps=KvDeps(render_kv=self.kv)),
             "http.request": self._check,
-            "slack.postMessage": lambda a: post_message_impl(
-                self.ctx, a, deps=SlackDeps(slack=SlackWebhook(self._http, env=ENV))
-            ),
         }
         self.tasks.append(task.name)
         route = routes.get(task.name)
@@ -502,13 +486,15 @@ class TestRebuild:
         result = await rebuild.func(h.ctx, {})
         assert result["deadLinks"] == []
 
-    async def test_publishes_and_posts_that_the_site_is_live(self, env: Any) -> None:
+    async def test_publishes_and_logs_that_the_site_is_live(
+        self, env: Any, caplog: pytest.LogCaptureFixture
+    ) -> None:
         h = harness()
-        result = await rebuild.func(h.ctx, {})
+        with caplog.at_level(logging.INFO, logger="grouplink.rebuild"):
+            result = await rebuild.func(h.ctx, {})
 
         assert result["published"] is True
-        assert len(h.slack_posts) == 1
-        assert "grouplink is live with 3 links across 2 pages." in h.slack_posts[0]["text"]
+        assert "grouplink is live with 3 links across 2 pages." in caplog.text
 
     async def test_never_calls_github_or_the_render_api(self, env: Any) -> None:
         h = harness()
@@ -517,28 +503,20 @@ class TestRebuild:
         assert not [task for task in h.tasks if task.startswith(("github.", "render."))]
         assert not {"committed", "commitSha", "deployId", "changedPaths"} & result.keys()
 
-    async def test_posts_nothing_when_the_site_is_unchanged(self, env: Any) -> None:
-        first = harness()
-        await rebuild.func(first.ctx, {})
-
-        second = harness(site=first.site_sets()[0]["value"])
-        result = await rebuild.func(second.ctx, {})
-
-        assert result["published"] is False
-        assert second.slack_posts == []
-
-    async def test_posts_dead_links_even_when_the_site_is_unchanged(self, env: Any) -> None:
+    async def test_logs_dead_links_even_when_the_site_is_unchanged(
+        self, env: Any, caplog: pytest.LogCaptureFixture
+    ) -> None:
         first = harness(statuses={"https://render.com/startups": 404})
         await rebuild.func(first.ctx, {})
 
         second = harness(
             site=first.site_sets()[0]["value"], statuses={"https://render.com/startups": 404}
         )
-        await rebuild.func(second.ctx, {})
+        with caplog.at_level(logging.INFO, logger="grouplink.rebuild"):
+            await rebuild.func(second.ctx, {})
 
-        assert len(second.slack_posts) == 1
-        assert "unchanged" in second.slack_posts[0]["text"]
-        assert "https://render.com/startups (404)" in second.slack_posts[0]["text"]
+        assert "unchanged" in caplog.text
+        assert "https://render.com/startups (404)" in caplog.text
 
     async def test_scrapes_in_batches_instead_of_one_run_per_link(self, env: Any) -> None:
         links = [raw_page(f"Link {i}", f"https://example.com/{i}", i) for i in range(25)]
@@ -549,14 +527,11 @@ class TestRebuild:
         assert len(h.scraped) == 25
         assert h.peak_in_flight <= 10
 
-    async def test_posts_the_failure_to_slack_before_it_rethrows(self, env: Any) -> None:
+    async def test_raises_when_the_default_slug_matches_no_profile(self, env: Any) -> None:
         env(SITE_DEFAULT_SLUG="nobody")
         h = harness()
         with pytest.raises(ValueError, match="matches no Slug"):
             await rebuild.func(h.ctx, {})
-
-        assert len(h.slack_posts) == 1
-        assert "grouplink.rebuild failed" in h.slack_posts[0]["text"]
 
     async def test_writes_the_site_to_key_value_once_with_no_ttl(self, env: Any) -> None:
         h = harness()
@@ -616,6 +591,5 @@ class TestRebuild:
 
         assert result["dryRun"] is True
         assert result["linkCount"] == 3
-        assert h.slack_posts == []
         assert h.site_sets() == []
         assert result["published"] is False

@@ -4,7 +4,7 @@ so a local web service serves the same pages as production.
 Run with `uv run python -m scripts.preview`.
 
 This is the read half of grouplink.rebuild: Notion and the scrape, with no metadata
-cache, no health check, and no Slack post.
+cache and no health check.
 """
 
 from __future__ import annotations

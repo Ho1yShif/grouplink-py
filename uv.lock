@@ -342,7 +342,6 @@ dependencies = [
     { name = "render-lab-tasks-notion" },
     { name = "render-lab-tasks-render-kv" },
     { name = "render-lab-tasks-scrape" },
-    { name = "render-lab-tasks-slack" },
     { name = "render-lab-triggers" },
     { name = "starlette" },
     { name = "uvicorn" },
@@ -369,7 +368,6 @@ requires-dist = [
     { name = "render-lab-tasks-notion", specifier = "==0.1.0" },
     { name = "render-lab-tasks-render-kv", specifier = "==0.1.0" },
     { name = "render-lab-tasks-scrape", specifier = "==0.1.0" },
-    { name = "render-lab-tasks-slack", specifier = "==0.1.1" },
     { name = "render-lab-triggers", specifier = "==0.1.0" },
     { name = "starlette", specifier = "==1.7.0" },
     { name = "uvicorn", specifier = "==0.53.0" },
@@ -1065,21 +1063,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/d7/cc/184226cf796a1a397455e637f05da65cb36551e3f4c3bab661376f00e10a/render_lab_tasks_scrape-0.1.0.tar.gz", hash = "sha256:2b01a02ee0c73c89a0587153bef9dc3a29b8010cb44805b4686ad4f52a495f34", size = 6886, upload-time = "2026-09-09T10:51:36.648Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cc/bd/3854ad1f404f60cabd419c974c53f637bdef7c5b18d9c27f8ebc3ee1f00c/render_lab_tasks_scrape-0.1.0-py3-none-any.whl", hash = "sha256:4c022dc51bdd0c2583480e28a113e5effc592867ee73ef7e048b72e863dd6d8f", size = 11606, upload-time = "2026-09-09T10:51:35.498Z" },
-]
-
-[[package]]
-name = "render-lab-tasks-slack"
-version = "0.1.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "httpx" },
-    { name = "render" },
-    { name = "render-lab-tasks-core" },
-    { name = "render-lab-triggers" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a3/3e/3d501e842766bba0c3fa7fbd3d6d7fc1cc5dedab5218cfccb463ffb1ad23/render_lab_tasks_slack-0.1.1.tar.gz", hash = "sha256:58a9151ebf57e7196ea655cde3df885208d756ba07ebff12f77189c56585efcf", size = 9569, upload-time = "2026-09-09T11:00:12.03Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d8/44/a137bed893af437d4055ad0e4446325d4aeb5a7376cd4a5520b957db695b/render_lab_tasks_slack-0.1.1-py3-none-any.whl", hash = "sha256:7648c4522702c1491182c5ec38087404724f5b02147626ac15760c5ea1cb2154", size = 14940, upload-time = "2026-09-09T11:00:10.425Z" },
 ]
 
 [[package]]

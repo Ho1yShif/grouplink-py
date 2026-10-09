@@ -12,7 +12,6 @@ dependencies = [
     "render-lab-tasks-scrape==0.1.0",
     "render-lab-tasks-render-kv==0.1.0",
     "render-lab-tasks-http==0.1.0",
-    "render-lab-tasks-slack==0.1.1",
     "render-lab-triggers==0.1.0",
     "starlette==1.7.0",
     "redis==6.4.0",

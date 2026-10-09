@@ -1,5 +1,5 @@
 """grouplink.rebuild — read the profiles and their links from Notion, enrich them,
-write the site to Key Value for the web service to serve, and say so in Slack.
+write the site to Key Value for the web service to serve, and log the outcome.
 
 Every `await ctx.run(...)` below is a separate durable run on its own instance, with
 that package's retry policy, tracked in the dashboard. The per-URL stages fan out
@@ -20,7 +20,6 @@ from render_lab_tasks_notion.types import PageDTO
 from render_lab_tasks_render_kv.get import get as kv_get
 from render_lab_tasks_render_kv.set import set as kv_set
 from render_lab_tasks_scrape.extract_metadata import extract_metadata
-from render_lab_tasks_slack.post_message import post_message
 
 from grouplink.app import app
 from grouplink.batch import map_in_batches
@@ -84,17 +83,7 @@ class RebuildResult(TypedDict):
 
 @app.task(name="grouplink.rebuild")
 async def rebuild(ctx: TaskContext, input: RebuildInput | None = None) -> RebuildResult:
-    try:
-        return await _run_rebuild(ctx, input or {})
-    except Exception as error:
-        # The webhook receiver only dispatches the run, so a failure would otherwise
-        # show up nowhere but the dashboard.
-        await _report_failure(ctx, error)
-        raise
-
-
-async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
-    cfg = load_config(input)
+    cfg = load_config(input or {})
 
     # 1) Parallel fan-out: read both databases.
     site = await read_notion_site(ctx, cfg)
@@ -182,19 +171,14 @@ async def _run_rebuild(ctx: TaskContext, input: RebuildInput) -> RebuildResult:
     #    so Key Value never evicts it. The page is live when the SET returns.
     current = await ctx.run(kv_get, {"key": SITE_KEY})
     if _snapshot_hash(current.get("value")) == snapshot_hash:
-        # A quiet day is not worth a Slack message. A broken link is.
         if dead_links:
-            await _notify(
-                ctx, "grouplink is unchanged, but some links are unreachable.", dead_links
-            )
+            _log_outcome("grouplink is unchanged, but some links are unreachable.", dead_links)
         return result
 
     await ctx.run(kv_set, {"key": SITE_KEY, "value": snapshot})
     result["published"] = True
 
-    # 8) Chained run: post the outcome.
-    await _notify(
-        ctx,
+    _log_outcome(
         f"grouplink is live with {len(card_urls)} links across {len(pages)} pages. {cfg.site_url}",
         dead_links,
     )
@@ -214,14 +198,6 @@ def _report_notion_problems(
     for name in unknown_icons(link_pages):
         log.info('unknown Icon "%s", using %s', name, DEFAULT_ICON)
     return skipped
-
-
-async def _report_failure(ctx: TaskContext, error: BaseException) -> None:
-    """Never masks the error it is reporting: a failed Slack post is logged and dropped."""
-    try:
-        await _notify(ctx, f"grouplink.rebuild failed: {error}", [])
-    except Exception:
-        log.exception("could not post the failure to Slack")
 
 
 def _unreachable(check: Mapping[str, Any] | None) -> bool:
@@ -267,6 +243,6 @@ def _to_model(page: ProfilePage, meta_by_url: dict[str, CachedMeta]) -> PageMode
     )
 
 
-async def _notify(ctx: TaskContext, text: str, dead_links: list[str]) -> None:
+def _log_outcome(text: str, dead_links: list[str]) -> None:
     body = f"{text}\nUnreachable: {', '.join(dead_links)}" if dead_links else text
-    await ctx.run(post_message, {"text": body})
+    log.info(body)

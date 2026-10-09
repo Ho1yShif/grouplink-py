@@ -26,7 +26,7 @@ class RebuildConfig:
     #: Notion database holding one row per profile: Name, Slug, Tagline.
     profiles_database_id: str
     limit: int
-    #: Skips the site write to Key Value and the Slack post.
+    #: Skips the site write to Key Value.
     dry_run: bool
 
     #: Slug of the profile the root page shows.
@@ -35,7 +35,7 @@ class RebuildConfig:
     #: Seconds a scraped metadata record stays in Key Value.
     cache_ttl_seconds: int
 
-    #: Public URL of the page, for the Slack message.
+    #: Public URL of the page, for the run log.
     site_url: str
 
 
@@ -43,8 +43,8 @@ FALSY = {"false", "0", "no", "off"}
 
 
 def env_flag(value: str | None, fallback: bool) -> bool:
-    """Case-insensitive, because DRY_RUN guards the site write and the Slack
-    post — reading `False` as true would publish a run the operator meant to hold.
+    """Case-insensitive, because DRY_RUN guards the site write. Reading `False` as
+    true would publish a run the operator meant to hold.
     """
     normalized = (value or "").strip().lower()
     if normalized == "":

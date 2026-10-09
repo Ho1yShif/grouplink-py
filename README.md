@@ -22,9 +22,10 @@ grouplink.rebuild
 ├── kv.set              ×N      cache them for 7 days
 ├── http.request        ×N      health-check every link
 ├── kv.get                      read the published snapshot
-├── kv.set                      write the new snapshot, if its hash changed
-└── slack.postMessage           the live URL, or the dead links
+└── kv.set                      write the new snapshot, if its hash changed
 ```
+
+The run logs the live URL and any dead links.
 
 Every `ctx.run` is a separate durable run with the owning package's retry policy.
 The `×N` steps fan out into independent chained runs, ten at a time, so a large
@@ -57,13 +58,12 @@ down. A crash inside the 60 seconds loses it, and the next edit starts a run.
 There is no schedule. The run is also what health-checks every link, so a link
 that rots is only reported the next time someone edits Notion.
 
-If the run itself fails, it posts the error to Slack and rethrows. The receiver
-has already answered Notion by then, so its response says nothing about how the
-run went.
+If the run itself fails, the error shows in the run's logs in the Dashboard. The
+receiver has already answered Notion by then, so its response says nothing about
+how the run went.
 
 A run publishes unless you set `DRY_RUN=true`. A dry run reads, scrapes, caches,
-and health-checks, then returns the result without writing the snapshot or
-posting to Slack.
+and health-checks, then returns the result without writing the snapshot.
 
 ## Run it locally
 
@@ -188,9 +188,8 @@ fails. The site keeps serving the last snapshot.
 | `NOTION_LINKS_DATABASE_ID`               | —        | The links database.                             |
 | `NOTION_PROFILES_DATABASE_ID`            | —        | The profiles database.                          |
 | `REDIS_URL`                   | —        | Key Value instance holding the site and the metadata cache. |
-| `SITE_URL`                    | —        | Public URL, quoted in the Slack message.        |
-| `SLACK_WEBHOOK_URL`           | —        | Optional. Unset logs the digest to the console. |
-| `DRY_RUN`                     | `false`  | Set `true` to skip the snapshot write and the Slack post. |
+| `SITE_URL`                    | —        | Public URL, quoted in the run log.              |
+| `DRY_RUN`                     | `false`  | Set `true` to skip the snapshot write.          |
 | `SITE_DEFAULT_SLUG`           | —        | Slug of the profile the root page shows.        |
 | `METADATA_TTL_SECONDS`        | `604800` | How long a scraped description is cached.       |
 | `LINKS_LIMIT`                 | `100`    | Notion rows to read per run.                    |
@@ -319,8 +318,7 @@ while `WORKFLOW_SLUG` is empty, and step 5 is what fixes it.
    - `DRY_RUN=true` for the first deploy, so a misconfigured run can't publish.
      The default is `false`.
 
-   Optional: `SLACK_WEBHOOK_URL`, plus `METADATA_TTL_SECONDS` and `LINKS_LIMIT`
-   if the defaults don't suit.
+   Optional: `METADATA_TTL_SECONDS` and `LINKS_LIMIT` if the defaults don't suit.
 
    Confirm the tasks appear on the service's Tasks page and note the slug.
 
@@ -471,7 +469,7 @@ lint, formatting, and types.
 
 Every step is a published task from
 [render-tasks-python](https://github.com/render-lab/render-tasks-python),
-installed from PyPI: `render-lab-tasks-{notion,scrape,render-kv,http,slack}`
+installed from PyPI: `render-lab-tasks-{notion,scrape,render-kv,http}`
 and `render-lab-triggers`. All of them pin `render==1.0.1` exactly, so don't
 upgrade the SDK on its own.
 
