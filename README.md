@@ -65,11 +65,20 @@ how the run went.
 A run publishes unless you set `DRY_RUN=true`. A dry run reads, scrapes, caches,
 and health-checks, then returns the result without writing the snapshot.
 
+## Prerequisites
+
+- Python 3.12 or later and [uv](https://docs.astral.sh/uv/).
+- The [Render CLI](https://render.com/docs/cli), for `render workflows dev`.
+- Docker or a local Redis.
+- A Notion account with the two databases described in
+  [The Notion databases](#the-notion-databases).
+- A Render account, to deploy.
+
 ## Run it locally
 
 ```bash
 uv sync
-cp .env.example .env      # fill in NOTION_TOKEN, NOTION_LINKS_DATABASE_ID, REDIS_URL
+cp .env.example .env      # fill in the Notion and Redis values
 render workflows dev -- uv run render-workflows grouplink.main:app
 ```
 
@@ -340,8 +349,10 @@ tab won't show it and there is nothing to look up in advance.
 
 1. Open the connection's **Webhooks** tab — a separate tab from
    **Configuration** — and click **+ Create a subscription**.
-2. Set the webhook URL to
-   `https://grouplink-webhook-py.onrender.com/webhooks/notion`. You may need to append your slug to this URL
+2. Set the webhook URL to `https://<webhook-host>/webhooks/notion`.
+   `<webhook-host>` is the web service's hostname from [Deploy](#deploy) step 2,
+   such as `grouplink-webhook-py.onrender.com`. Render adds a suffix to the name
+   if it is taken.
 3. Click the minus sign to unsubscribe from all events so you can select only the ones you need.
    Subscribe to `page.created`, `page.deleted`, `page.undeleted`,
    `page.properties_updated`, `page.content_updated`,
@@ -376,8 +387,8 @@ exists and you know its hostname.
 1. Create the connection as above, but set the type to **Public**. Notion asks
    for a company name, a homepage URL, a privacy policy URL, and a terms URL,
    and any reachable page satisfies all four.
-2. Set the redirect URI to `https://grouplink-webhook-py.onrender.com/oauth`,
-   substituting the receiver's real hostname if Render had to suffix the name.
+2. Set the redirect URI to `https://<webhook-host>/oauth`, using the web
+   service's hostname.
    Nothing serves that path, so the redirect 404s and the code stays in the
    address bar. The form prepends `https://` to whatever you type, so a
    `http://localhost` URI can't be entered. Register one redirect URI and no
@@ -391,7 +402,7 @@ exists and you know its hostname.
    this:
 
    ```
-   https://api.notion.com/v1/oauth/authorize?client_id=<CLIENT_ID>&response_type=code&owner=user&redirect_uri=https%3A%2F%2Fgrouplink-webhook-py.onrender.com%2Foauth
+   https://api.notion.com/v1/oauth/authorize?client_id=<CLIENT_ID>&response_type=code&owner=user&redirect_uri=https%3A%2F%2F<webhook-host>%2Foauth
    ```
 
    Pick the links and profiles databases, and approve. The browser lands on the
@@ -413,7 +424,7 @@ exists and you know its hostname.
      -d "{
        \"grant_type\": \"authorization_code\",
        \"code\": \"$CODE\",
-       \"redirect_uri\": \"https://grouplink-webhook-py.onrender.com/oauth\"
+       \"redirect_uri\": \"https://<webhook-host>/oauth\"
      }"
    ```
 
@@ -444,7 +455,7 @@ Workflow service. The `access_token` goes in as `NOTION_TOKEN` at step 4.
 a Notion edit, and takes the same run input the CLI does:
 
 ```bash
-curl -X POST https://grouplink-webhook-py.onrender.com/tasks/grouplink.rebuild \
+curl -X POST https://<webhook-host>/tasks/grouplink.rebuild \
   -H "Authorization: Bearer $DISPATCH_TOKEN" \
   -H "Content-Type: application/json" \
   -d '[{"dryRun":true}]'
