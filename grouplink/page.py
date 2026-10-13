@@ -316,6 +316,7 @@ _STYLES_TAIL = """
   line-height: 15.4px;
   letter-spacing: 0.02em;
   color: var(--text-faint);
+  text-align: center;
 }
 
 @keyframes row-fade {
